@@ -416,3 +416,46 @@ tr.row-warn > td:first-child  { box-shadow: inset 3px 0 0 var(--warn-line); }
 ::-webkit-scrollbar-track { background: var(--hdr); }
 ::-webkit-scrollbar-thumb { background: #BFC3C9; border: 2px solid var(--hdr); }
 ::-webkit-scrollbar-thumb:hover { background: #9AA0A8; }
+
+/* ===== 목록 필터 · 정렬 (static/js/grid.js) ===== */
+.g-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; min-height: 26px; flex-wrap: wrap; }
+.g-count { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.g-count b { color: var(--ink); }
+.g-bar .g-note { margin-left: auto; font-size: 12px; color: var(--muted); }
+th.g-th { padding-right: 24px !important; }
+th.g-th .g-sort { cursor: pointer; user-select: none; }
+th.g-th .g-sort:hover { color: var(--accent); }
+th.g-th .g-arrow { font-style: normal; font-size: 10px; margin-left: 3px; color: var(--accent); }
+th.s-asc  .g-arrow::after { content: "▲"; }
+th.s-desc .g-arrow::after { content: "▼"; }
+.g-fbtn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 17px; height: 17px; padding: 0; line-height: 15px; font-size: 10px;
+  border: 1px solid var(--line); border-radius: 2px; background: #FFFFFF;
+  color: var(--muted); cursor: pointer;
+}
+.g-fbtn:hover { border-color: var(--accent); color: var(--accent); }
+th.f-on { color: var(--accent-dk) !important; }
+th.f-on .g-fbtn { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+tr.g-hide, tr.g-hide-p { display: none !important; }
+
+.g-pop {
+  position: absolute; z-index: 200; width: 270px;
+  background: #FFFFFF; border: 1px solid var(--line); border-radius: 2px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.14); padding: 8px; font-size: 12.5px;
+}
+.g-pop-sort { display: flex; gap: 4px; margin-bottom: 6px; }
+.g-pop-sort .btn { flex: 1; justify-content: center; }
+.g-pop-search { width: 100%; height: 26px; margin-bottom: 6px; }
+.g-pop-list { max-height: 260px; overflow: auto; border: 1px solid var(--line-soft); padding: 2px 0; }
+.g-pop-list label {
+  display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer;
+  font-size: 12.5px; font-weight: 400; color: var(--ink); white-space: nowrap;
+}
+.g-pop-list label:hover { background: var(--sel); }
+.g-pop-list label.all { border-bottom: 1px solid var(--line-soft); margin-bottom: 2px; }
+.g-pop-list input { width: auto; min-width: 0; height: auto; margin: 0; accent-color: var(--accent); }
+.g-pop-list .v { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.g-pop-list .n { color: var(--muted); font-size: 11.5px; }
+.g-pop-actions { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.g-pop-actions .spacer { flex: 1; }

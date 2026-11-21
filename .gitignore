@@ -10,3 +10,13 @@ logs/
 # pycache 제외
 __pycache__/
 *.py[cod]
+# 서버별 설정 (비밀번호 포함) — 양식(.env.example)만 소스에 포함
+.env
+.env.*
+!.env.example
+
+# 배포 묶음 (tools/changed_files.py)
+dist/
+
+# _mine 제외
+_mine/

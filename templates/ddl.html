@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}DDL 모니터링{% endblock %}
+{% block title %}프로시저{% endblock %}
 
 {% block content %}
 <!-- ══════════════════════════════════════════════
@@ -12,12 +12,14 @@
     <label for="period-select">회차</label>
     <input type="month" id="period-select" value="{{ period }}">
 
-    <button id="btn-upload" class="btn btn-primary"
-            onclick="if(ROLE!=='operator'){showToast(PERM_DENIED_MSG,'warn');return;}document.getElementById('ddl-csv-file').click()">
+    {% if perms.ddl >= 2 %}
+    <button id="btn-upload" class="btn btn-primary" title="DBSAFER 에서 받은 CSV 를 그대로 올리면 됩니다 (전체 칼럼 가능)"
+            onclick="document.getElementById('ddl-csv-file').click()">
       CSV 업로드
     </button>
     <input type="file" id="ddl-csv-file" accept=".csv"
            style="display:none" onchange="onUpload(this)">
+    {% endif %}
 
     <button id="btn-excel-ddl" class="btn" onclick="downloadDdlExcel()">엑셀</button>
   </div>
@@ -32,7 +34,7 @@
 <!-- ══════════════════════════════════════════════
      시스템 탭
 ══════════════════════════════════════════════ -->
-<div class="tabs">
+<div class="tabs" id="sysTabs">
   {% for s in ['HR', 'EPRO', 'SR', 'PMS'] %}
   <button class="tab {% if s == system_code %}active{% endif %}"
           onclick="changeSystem('{{ s }}')">{{ s }}</button>
@@ -78,33 +80,19 @@
      로그 목록 + SR 입력
 ══════════════════════════════════════════════ -->
 <div class="section">
-  <h3>DDL 로그 — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 저장 · 노란 칸 = 입력 필요</span></h3>
+  <h3>DDL 로그{% if perms.ddl >= 2 %} — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 저장 · 노란 칸 = 입력 필요</span>{% endif %}</h3>
   <div class="dml-legend">
     <span><span class="badge badge-bad" style="font-size:11px;">미적용</span> SR 미입력 또는 번호 없음</span>
     <span><span class="badge badge-warn" style="font-size:11px;">비정상</span> SR 작업승인일 전 실행·긴급 기한 초과</span>
     <span><span class="badge badge-ok" style="font-size:11px;">정상</span> 승인일 이후 실행 (긴급: 실행 후 5일 이내 SR종료)</span>
   </div>
 
-  <div class="filter-bar" style="margin-bottom:14px;">
-    <input type="text" id="ddl-search" placeholder="오브젝트명 / 계정 / SR번호 검색"
-           style="min-width:220px;">
-    <select id="ddl-type-filter" onchange="applyFilters()">
-      <option value="all">전체 타입</option>
-      <option value="CREATE">CREATE</option>
-      <option value="ALTER">ALTER</option>
-      <option value="DROP">DROP</option>
-      <option value="TRUNCATE">TRUNCATE</option>
-      <option value="RENAME">RENAME</option>
-    </select>
-    <select id="ddl-status-filter" onchange="applyFilters()">
-      <option value="all">전체 상태</option>
-      <option value="미적용">미적용</option>
-      <option value="비정상">비정상</option>
-      <option value="정상">정상</option>
-    </select>
-    <span id="ddl-count" style="font-size:12px;color:#6a737d;"></span>
+  <div class="g-bar" id="ddlBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
   </div>
-  
+
   {% if not logs %}
   <div class="empty-state">
     <div class="empty-title">표시할 DDL 로그가 없습니다</div>
@@ -116,27 +104,27 @@
   </div>
   {% else %}
   <div style="overflow-x:auto;">
-    <table id="ddl-table" class="g ddl-grid">
+    <table id="ddl-table" class="g ddl-grid" data-grid data-grid-bar="#ddlBar">
       <thead>
         <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
           <th class="th" style="text-align:center;width:40px;">#</th>
-          <th class="th" style="width:150px;">요청시각</th>
-          <th class="th">사용자명</th>
-          <th class="th">접속계정</th>
-          <th class="th">대상 오브젝트</th>
-          <th class="th" style="width:90px;">DDL 타입</th>
-          <th class="th" style="width:190px;">SR 번호</th>
-          <th class="th">SR제목</th>
-          <th class="th" style="width:80px;">작업구분</th>
-          <th class="th" style="width:95px;">작업승인일</th>
-          <th class="th" style="width:95px;">SR종료일</th>
-          <th class="th" style="text-align:center;width:64px;">변경요청승인</th>
-          <th class="th" style="text-align:center;width:64px;">사용자테스트</th>
-          <th class="th" style="text-align:center;width:64px;">이관전승인</th>
-          <th class="th" style="width:80px;">개발자</th>
-          <th class="th" style="width:80px;">이관자</th>
-          <th class="th" style="width:80px;">검토수행자</th>
-          <th class="th" style="text-align:center;width:90px;">상태</th>
+          <th class="th" data-f style="width:150px;">요청시각</th>
+          <th class="th" data-f>사용자명</th>
+          <th class="th" data-f>접속계정</th>
+          <th class="th" data-f>대상 오브젝트</th>
+          <th class="th" data-f style="width:100px;">DDL 타입</th>
+          <th class="th" data-f style="width:190px;">SR 번호</th>
+          <th class="th" data-f>SR제목</th>
+          <th class="th" data-f style="width:90px;">작업구분</th>
+          <th class="th" data-f style="width:100px;">작업승인일</th>
+          <th class="th" data-f style="width:100px;">SR종료일</th>
+          <th class="th" data-f style="text-align:center;width:80px;">변경요청승인</th>
+          <th class="th" data-f style="text-align:center;width:80px;">사용자테스트</th>
+          <th class="th" data-f style="text-align:center;width:80px;">이관전승인</th>
+          <th class="th" data-f style="width:90px;">개발자</th>
+          <th class="th" data-f style="width:90px;">이관자</th>
+          <th class="th" data-f style="width:90px;">검토수행자</th>
+          <th class="th" data-f style="text-align:center;width:100px;">상태</th>
           <th class="th" style="text-align:center;width:60px;">상세</th>
         </tr>
       </thead>
@@ -145,7 +133,6 @@
         <tr id="ddlrow-{{ l.log_id }}"
             data-status="{{ l.ui_status }}"
             data-type="{{ l.ddl_type }}"
-            data-abnormal="{{ 'true' if l.is_abnormal else 'false' }}"
             data-reason="{{ l.ddl_reason }}"
             style="border-bottom:1px solid #eaecef;
                    {% if l.ui_status == '비정상' %}background:#fffbea;
@@ -157,24 +144,14 @@
           <td class="td"><code style="font-size:12px;">{{ l.db_user }}</code></td>
           <td class="td" style="color:#6a737d;font-size:12px;">{{ l.conn_account }}</td>
           <td class="td" style="font-weight:500;">{{ l.target_object }}</td>
-          <td class="td">
-            {% if l.ddl_type in ['DROP', 'TRUNCATE'] %}
-              <span class="badge badge-bad">{{ l.ddl_type }}</span>
-            {% elif l.ddl_type == 'ALTER' %}
-              <span class="badge badge-warn">{{ l.ddl_type }}</span>
-            {% elif l.ddl_type == 'CREATE' %}
-              <span class="badge badge-ok">{{ l.ddl_type }}</span>
-            {% else %}
-              <span class="badge badge-pending">{{ l.ddl_type }}</span>
-            {% endif %}
-          </td>
+          <td class="td">{{ l.ddl_type }}</td>
           <td class="td">
             <input type="text"
                    id="ddlsr-{{ l.log_id }}"
                    class="ddl-sr-input"
                    data-log-id="{{ l.log_id }}"
                    value="{{ l.sr_no }}"
-                   placeholder="H01-YYYYMMDD-NNN"
+                   {% if perms.ddl >= 2 %}placeholder="H01-YYYYMMDD-NNN"{% else %}readonly{% endif %}
                    style="width:120px;font-size:12px;
                    {% if l.ui_status == '정상' %}background:#f0fdf4;border-color:#86efac;
                    {% elif l.ui_status == '비정상' %}background:#fffbea;border-color:#fcd34d;
@@ -194,30 +171,30 @@
               style="font-size:12px;white-space:nowrap;">{{ l.close_date }}</td>
           <!-- 6개 편집 칼럼 -->
           <td class="td" style="text-align:center;">
-            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="proc_change_approval"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="proc_change_approval"
                    value="{{ l.proc_change_approval }}" style="width:52px;text-align:center;">
           </td>
           <td class="td" style="text-align:center;">
-            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="user_test"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="user_test"
                    value="{{ l.user_test }}" style="width:52px;text-align:center;">
           </td>
           <td class="td" style="text-align:center;">
-            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="pre_release_approval"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="pre_release_approval"
                    value="{{ l.pre_release_approval }}" style="width:52px;text-align:center;">
           </td>
           <td class="td">
-            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="developer"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="developer"
                    value="{{ l.developer }}" style="width:72px;">
           </td>
           <td class="td">
-            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="releaser"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="releaser"
                    value="{{ l.releaser }}" style="width:72px;">
           </td>
           <td class="td">
-            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="reviewer_name"
+            <input {% if perms.ddl < 2 %}readonly {% endif %}class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="reviewer_name"
                    value="{{ l.reviewer_name }}" style="width:72px;">
           </td>
-          <td class="td" style="text-align:center;white-space:nowrap;" id="ddlstatus-{{ l.log_id }}">
+          <td class="td" style="text-align:center;white-space:nowrap;" id="ddlstatus-{{ l.log_id }}" data-v="{{ l.ui_status }}">
             {% if l.ui_status == '정상' %}
               <span class="badge badge-ok">정상</span>
             {% elif l.ui_status == '비정상' %}
@@ -235,7 +212,7 @@
             <button id="ddlexp-{{ l.log_id }}" class="btn-toggle" onclick="toggleDetail({{ l.log_id }})">쿼리</button>
           </td>
         </tr>
-        <tr id="ddldet-{{ l.log_id }}" class="ddl-detail-row"
+        <tr id="ddldet-{{ l.log_id }}" class="ddl-detail-row g-child"
             style="display:none;border-bottom:2px solid #d0d7de;">
           <td colspan="19">
             <table class="g" style="background:#fff;">
@@ -299,13 +276,7 @@
 <script>
 const CUR_YM = '{{ period }}';
 const CUR_SC = '{{ system_code }}';
-const ROLE   = '{{ current_user.role }}';
-
-/* ── DDL 타입 배지 색상 (Jinja 매크로 대신 JS 사용) ── */
-function ddlBadgeClass(t) {
-  return { CREATE:'badge-ok', ALTER:'badge-done', DROP:'badge-bad',
-           TRUNCATE:'badge-bad', RENAME:'badge-pending' }[t] || 'badge-pending';
-}
+const CAN_EDIT = {{ 'true' if perms.ddl >= 2 else 'false' }};   // 프로시저 수정 권한
 
 /* ── 시스템 탭 ── */
 function changeSystem(code) {
@@ -333,7 +304,7 @@ async function downloadDdlExcel() {
   try {
     const res = await fetch(url);
     const ct  = res.headers.get('Content-Type') || '';
-    if (ct.includes('spreadsheetml') || ct.includes('octet-stream')) {
+    if (res.ok && (ct.includes('spreadsheetml') || ct.includes('octet-stream'))) {
       const blob = await res.blob();
       const a    = document.createElement('a');
       a.href     = URL.createObjectURL(blob);
@@ -342,7 +313,7 @@ async function downloadDdlExcel() {
       URL.revokeObjectURL(a.href);
     } else {
       const data = await res.json().catch(() => ({}));
-      showToast(data.message || '내보낼 데이터가 없습니다.', 'bad');
+      showToast(data.message || '엑셀 다운로드 실패', 'bad');
     }
   } catch (e) {
     showToast('엑셀 다운로드 오류: ' + e.message, 'bad');
@@ -355,6 +326,11 @@ async function downloadDdlExcel() {
 /* ── CSV 업로드 ── */
 async function onUpload(input) {
   if (!input.files[0]) return;
+  const ymSel = document.getElementById('period-select').value;
+  if (!confirm(`${ymSel} 회차 ${CUR_SC} 에 '${input.files[0].name}' 을(를) 업로드합니다.\n\n`
+             + `이 회차·시스템의 기존 DDL 로그는 새 파일로 바뀝니다.\n`
+             + `같은 로그에 이미 입력한 SR번호 · 사유 · 결재 칸은 그대로 유지됩니다.\n`
+             + `파일에 문제가 있으면 기존 데이터는 바뀌지 않습니다.`)) { input.value = ''; return; }
   const btn = document.getElementById('btn-upload');
   btn.disabled = true; btn.textContent = '업로드 중…';
 
@@ -375,7 +351,8 @@ async function onUpload(input) {
       const s = data.stats;
       showToast(
         `업로드 완료 — 전체 ${s.total_rows}행 ` +
-        `(자동 ${s.auto} + 전파 ${s.propagated} / 미매핑 ${s.unmapped} / 위험 ${s.abnormal})`,
+        `(자동 ${s.auto} + 전파 ${s.propagated} / 미매핑 ${s.unmapped_rows})` +
+        (s.kept_input ? ` · 입력값 유지 ${s.kept_input}행` : ''),
         'ok'
       );
       setTimeout(() => location.reload(), 1200);
@@ -540,6 +517,7 @@ function _setApplied(logId, sr, uiStatus) {
       html += ` <span class="reason-flag${reason ? '' : ' none'}" id="ddlrflag-${logId}" onclick="openReasonModal(${logId})" title="${reason || '사유 미입력'}">${icon}</span>`;
     }
     st.innerHTML = html;
+    st.dataset.v = uiStatus;
   }
   if (clr) clr.style.display = isPending ? 'none' : '';
   if (inp) {
@@ -549,7 +527,6 @@ function _setApplied(logId, sr, uiStatus) {
     inp.style.borderColor = bd;
   }
   _updateKpi();
-  applyFilters();
 }
 
 function _setPending(logId) {
@@ -563,7 +540,7 @@ function _setPending(logId) {
     row.style.background = '#fff5f5';
     row.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
   }
-  if (st)  st.innerHTML = '<span class="badge badge-bad">미적용</span>';
+  if (st)  { st.innerHTML = '<span class="badge badge-bad">미적용</span>'; st.dataset.v = '미적용'; }
   if (clr) clr.style.display = 'none';
   if (inp) {
     inp.value = '';
@@ -572,7 +549,6 @@ function _setPending(logId) {
     inp.style.borderColor = bd;
   }
   _updateKpi();
-  applyFilters();
 }
 
 /* ── 편집 칼럼 저장 ── */
@@ -617,7 +593,6 @@ async function saveDdlReason() {
     }
     showToast(reason ? '사유가 저장되었습니다.' : '사유가 삭제되었습니다.', 'ok');
     _updateKpi();
-    applyFilters();
     closeReasonModal();
   } else {
     if (r._forbidden) return;
@@ -625,48 +600,17 @@ async function saveDdlReason() {
   }
 }
 
-/* ── 통합 필터 ── */
-function applyFilters() {
-  const kw      = (document.getElementById('ddl-search').value || '').toLowerCase();
-  const typeVal = (document.getElementById('ddl-type-filter').value || 'all');
-  const stVal   = (document.getElementById('ddl-status-filter').value || 'all');
-  const tbl     = document.getElementById('ddl-table');
-  if (!tbl) return;
-
-  let visible = 0;
-  tbl.querySelectorAll('tbody tr[data-status]').forEach(tr => {
-    const text    = tr.textContent.toLowerCase();
-    const rowType = tr.dataset.type || '';
-    const rowSt   = tr.dataset.status || '';
-    const show    =
-      (!kw      || text.includes(kw))           &&
-      (typeVal === 'all' || rowType === typeVal) &&
-      (stVal   === 'all' || rowSt   === stVal);
-    tr.style.display = show ? '' : 'none';
-    // 부모 행이 숨겨지면 세부 행도 닫음
-    const logId  = tr.id.replace('ddlrow-', '');
-    const detRow = document.getElementById('ddldet-' + logId);
-    if (detRow && !show) {
-      detRow.style.display = 'none';
-      const btn = document.getElementById('ddlexp-' + logId);
-      if (btn) btn.textContent = '쿼리';
-    }
-    if (show) visible++;
-  });
-  const cnt = document.getElementById('ddl-count');
-  if (cnt) cnt.textContent = `${visible}개 표시`;
-}
-
 document.addEventListener('DOMContentLoaded', () => {
+  // 편집칸 초기 색칠
+  document.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
+  if (!CAN_EDIT) return;   // 조회 권한만 있으면 입력 이벤트 없음
+
   // SR 입력칸 Enter → 적용
   document.querySelectorAll('.ddl-sr-input').forEach(inp => {
     inp.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); applyDdlSr(inp.dataset.logId); }
     });
   });
-
-  // 편집칸 초기 색칠
-  document.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
 
   // 편집칸 이벤트: 변경 시 저장
   document.querySelectorAll('.ddl-edit-inp').forEach(inp => {
@@ -688,8 +632,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeReasonModal();
   });
-
-  applyFilters();
 });
 </script>
 {% endblock %}

@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from models.auth import AppUser
+from models.account import AppUser
 
 
 class RedirectToLogin(Exception):
@@ -53,17 +53,3 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         raise RedirectToLogin()
 
     return user
-
-
-def require_operator(current_user=Depends(get_current_user)):
-    """페이지 핸들러용 — 권한 없으면 한국어 HTML 에러 페이지."""
-    if current_user.role != "operator":
-        raise ForbiddenPage("이 페이지는 운영자(operator) 전용입니다. 관리자에게 문의하세요.")
-    return current_user
-
-
-def require_reviewer(current_user=Depends(get_current_user)):
-    """페이지 핸들러용 — 권한 없으면 한국어 HTML 에러 페이지."""
-    if current_user.role not in ("operator", "reviewer"):
-        raise ForbiddenPage("이 페이지는 운영자·검토수행자 전용입니다. 관리자에게 문의하세요.")
-    return current_user

@@ -1,25 +1,27 @@
 {% extends "base.html" %}
-{% block title %}DML 모니터링{% endblock %}
+{% block title %}데이터변경 운영자 화면{% endblock %}
 
 {% block content %}
 <!-- ══════════════════════════════════════════════
      페이지 헤더
 ══════════════════════════════════════════════ -->
 <div class="page-head">
-  <h2>데이터변경 (DML) <span class="muted-tag">담당자 화면</span></h2>
+  <h2>데이터변경 (DML) <span class="muted-tag">운영자 화면</span></h2>
   <div class="actions">
     {% if last_uploaded_at %}<span class="page-meta">마지막 CSV 업로드 {{ last_uploaded_at }}</span><span class="tb-sep"></span>{% endif %}
-    <a class="btn" href="/dml/developer?year_month={{ period }}">개발자 화면</a>
-    <span class="tb-sep"></span>
+    {% if perms.dml_developer >= 1 %}<a class="btn" href="/dml/developer?year_month={{ period }}">개발자 화면</a>
+    <span class="tb-sep"></span>{% endif %}
     <label for="period-select">회차</label>
     <input type="month" id="period-select" value="{{ period }}">
 
-    <button id="btn-upload" class="btn btn-primary"
-            onclick="if(ROLE!=='operator'){showToast(PERM_DENIED_MSG,'warn');return;}document.getElementById('csv-file').click()">
+    {% if perms.dml_manager >= 2 %}
+    <button id="btn-upload" class="btn btn-primary" title="DBSAFER 에서 받은 CSV 를 그대로 올리면 됩니다 (전체 칼럼 가능)"
+            onclick="document.getElementById('csv-file').click()">
       CSV 업로드
     </button>
     <input type="file" id="csv-file" accept=".csv"
            style="display:none" onchange="onUpload(this)">
+    {% endif %}
 
     <button id="btn-excel" class="btn" onclick="downloadExcel()">엑셀</button>
   </div>
@@ -128,7 +130,7 @@
      전체 그룹 목록
 ══════════════════════════════════════════════ -->
 <div class="section">
-  <h3>전체 그룹 목록 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 Enter → 적용 · 노란 칸 = 입력 필요</span></h3>
+  <h3>전체 그룹 목록 {% if perms.dml_manager >= 2 %}<span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 Enter → 적용 · 노란 칸 = 입력 필요</span>{% endif %}</h3>
 
   <div class="dml-legend" style="margin-bottom:10px;">
     <span><span class="badge badge-bad" style="font-size:11px;">미적용</span> SR 미입력 또는 번호 없음</span>
@@ -136,18 +138,10 @@
     <span><span class="badge badge-ok" style="font-size:11px;">정상</span> 승인일 이후 실행 (긴급: 실행 후 5일 이내 SR종료)</span>
   </div>
 
-  <div class="filter-bar">
-    <input type="text" id="search-input"
-           placeholder="계정 / 테이블 / SR번호 검색"
-           style="min-width:220px;">
-    <select id="status-filter">
-      <option value="all">전체 상태</option>
-      <option value="정상">정상</option>
-      <option value="비정상">비정상</option>
-      <option value="미적용">미적용</option>
-    </select>
-    <span id="visible-count"
-          style="font-size:12px;color:#6a737d;margin-left:4px;"></span>
+  <div class="g-bar" id="groupBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
   </div>
 
   {% if not groups %}
@@ -161,22 +155,22 @@
   </div>
   {% else %}
   <div style="overflow-x:auto;">
-    <table id="group-table" class="g">
+    <table id="group-table" class="g" data-grid data-grid-bar="#groupBar">
       <thead>
         <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
           <th class="th" style="width:36px;text-align:center;">#</th>
-          <th class="th" style="width:90px;">사용자명</th>
-          <th class="th" style="width:80px;">접속계정</th>
-          <th class="th" style="width:200px;">대상 테이블</th>
-          <th class="th" style="width:52px;text-align:right;">건수</th>
-          <th class="th" style="width:140px;">요청시각</th>
-          <th class="th" style="width:160px;">SR번호</th>
-          <th class="th" style="width:150px;">SR제목</th>
-          <th class="th" style="width:90px;">작업구분</th>
-          <th class="th" style="width:90px;">작업승인일</th>
-          <th class="th" style="width:90px;">SR종료일</th>
-          <th class="th" style="width:90px;text-align:center;">DML여부</th>
-          <th class="th" style="width:90px;text-align:center;">상태</th>
+          <th class="th" data-f style="width:100px;">사용자명</th>
+          <th class="th" data-f style="width:90px;">접속계정</th>
+          <th class="th" data-f style="width:200px;">대상 테이블</th>
+          <th class="th" data-f style="width:64px;text-align:right;">건수</th>
+          <th class="th" data-f style="width:150px;">요청시각</th>
+          <th class="th" data-f style="width:160px;">SR번호</th>
+          <th class="th" data-f style="width:150px;">SR제목</th>
+          <th class="th" data-f style="width:100px;">작업구분</th>
+          <th class="th" data-f style="width:100px;">작업승인일</th>
+          <th class="th" data-f style="width:100px;">SR종료일</th>
+          <th class="th" data-f style="width:100px;text-align:center;">DML여부</th>
+          <th class="th" data-f style="width:100px;text-align:center;">상태</th>
           <th class="th" style="width:60px;text-align:center;">상세</th>
         </tr>
       </thead>
@@ -216,7 +210,7 @@
                      class="m-sr-input"
                      data-group-id="{{ g.group_id }}"
                      value="{{ g.sr_no }}"
-                     placeholder="H01-YYYYMMDD-NNN"
+                     {% if perms.dml_manager >= 2 %}placeholder="H01-YYYYMMDD-NNN"{% else %}readonly{% endif %}
                      style="width:130px;font-size:12px;height:24px;padding:2px 6px;
                      box-sizing:border-box;border:1px solid;border-radius:3px;
                      {% if g.ui_status == '정상' %}background:#f0fdf4;border-color:#86efac;
@@ -261,8 +255,11 @@
           </td>
 
           <!-- DML여부 -->
-          <td class="td" style="text-align:center;white-space:nowrap;" id="mdml-cell-{{ g.group_id }}">
-            {% if g.is_dml %}
+          <td class="td" style="text-align:center;white-space:nowrap;" id="mdml-cell-{{ g.group_id }}"
+              data-v="{{ 'DML' if g.is_dml else '비DML' }}">
+            {% if perms.dml_manager < 2 %}
+              {{ 'DML' if g.is_dml else '비DML' }}
+            {% elif g.is_dml %}
               <button class="btn btn-sm" id="mdml-btn-{{ g.group_id }}"
                       onclick="mgrToggleDml({{ g.group_id }}, false)"
                       title="비DML로 표시">비DML로</button>
@@ -275,7 +272,7 @@
           </td>
 
           <!-- 상태 -->
-          <td class="td" style="text-align:center;white-space:nowrap;" id="mstatus-{{ g.group_id }}">
+          <td class="td" style="text-align:center;white-space:nowrap;" id="mstatus-{{ g.group_id }}" data-v="{{ g.ui_status }}">
             {% if g.ui_status == '정상' %}
               <span class="badge badge-ok">정상</span>
             {% elif g.ui_status == '비정상' %}
@@ -300,7 +297,7 @@
         </tr>
 
         <!-- 상세 서브행 -->
-        <tr id="mdetail-{{ g.group_id }}" class="m-detail-row" style="display:none;">
+        <tr id="mdetail-{{ g.group_id }}" class="m-detail-row g-child" style="display:none;">
           <td colspan="14" style="padding:0;">
             <div id="mdetail-body-{{ g.group_id }}"
                  style="padding:8px 12px 10px 48px;"></div>
@@ -373,8 +370,7 @@
 /* ── 현재 컨텍스트 ── */
 const CUR_YM    = '{{ period }}';
 const CUR_SC    = '{{ system_code }}';
-const ROLE      = '{{ current_user.role }}';
-const CAN_EDIT_MGR = ['operator', 'reviewer'].includes(ROLE);
+const CAN_EDIT_MGR = {{ 'true' if perms.dml_manager >= 2 else 'false' }};   // 운영자 화면 수정 권한
 
 /* ────────────────────────────────────────
    시스템 탭 전환
@@ -402,6 +398,11 @@ document.getElementById('period-select')
 ──────────────────────────────────────── */
 async function onUpload(input) {
   if (!input.files[0]) return;
+  const ymSel = document.getElementById('period-select').value;
+  if (!confirm(`${ymSel} 회차에 '${input.files[0].name}' 을(를) 업로드합니다.\n\n`
+             + `CSV 에 들어 있는 업무(HR·EPRO·SR·PMS)의 기존 로그는 새 파일로 바뀝니다.\n`
+             + `같은 로그에 이미 입력한 SR번호 · DML여부 · 사유는 그대로 유지됩니다.\n`
+             + `파일에 문제가 있으면 기존 데이터는 바뀌지 않습니다.`)) { input.value = ''; return; }
   const btn = document.getElementById('btn-upload');
   btn.disabled = true;
   btn.textContent = '업로드 중…';
@@ -420,8 +421,10 @@ async function onUpload(input) {
     }
     const data = await res.json();
     if (data.ok) {
-      showToast(`업로드 완료 — ${data.count}건 적재`, 'ok');
-      setTimeout(() => location.reload(), 800);
+      const st = data.stats || {};
+      showToast(`업로드 완료 — 로그 ${st.total_rows ?? 0}건 · 그룹 ${st.group_count ?? 0}개`
+              + (st.kept_input ? ` (입력값 유지 ${st.kept_input}개)` : ''), 'ok');
+      setTimeout(() => location.reload(), 1200);
     } else {
       showToast('업로드 실패: ' + (data.message || 'unknown'), 'bad');
     }
@@ -446,7 +449,7 @@ async function downloadExcel() {
   try {
     const res = await fetch(url);
     const ct  = res.headers.get('Content-Type') || '';
-    if (ct.includes('spreadsheetml') || ct.includes('octet-stream')) {
+    if (res.ok && (ct.includes('spreadsheetml') || ct.includes('octet-stream'))) {
       const blob = await res.blob();
       const a    = document.createElement('a');
       a.href     = URL.createObjectURL(blob);
@@ -455,7 +458,7 @@ async function downloadExcel() {
       URL.revokeObjectURL(a.href);
     } else {
       const data = await res.json().catch(() => ({}));
-      showToast(data.message || '내보낼 데이터가 없습니다.', 'bad');
+      showToast(data.message || '엑셀 다운로드 실패', 'bad');
     }
   } catch (e) {
     showToast('엑셀 다운로드 오류: ' + e.message, 'bad');
@@ -467,82 +470,14 @@ async function downloadExcel() {
 
 
 /* ────────────────────────────────────────
-   검색 + 상태 필터 (통합)
-──────────────────────────────────────── */
-function applyFilters() {
-  const kw  = document.getElementById('search-input').value.toLowerCase().trim();
-  const st  = document.getElementById('status-filter').value;
-  const tbl = document.getElementById('group-table');
-  if (!tbl) return;
-
-  let visible = 0;
-  tbl.querySelectorAll('tbody tr').forEach(tr => {
-    if (tr.classList.contains('m-detail-row')) return; // 상세 서브행 제외
-    const text    = tr.textContent.toLowerCase();
-    const rowSt   = tr.dataset.status;
-    const matchKw = !kw  || text.includes(kw);
-    const matchSt = st === 'all' || rowSt === st;
-    const show    = matchKw && matchSt;
-    tr.style.display = show ? '' : 'none';
-    if (show) visible++;
-    // 부모가 숨겨지면 상세 서브행도 닫기
-    if (!show) {
-      const gid = tr.id.replace('mrow-', '');
-      const det = document.getElementById('mdetail-' + gid);
-      if (det) { det.style.display = 'none'; }
-      const btn = document.getElementById('mexp-' + gid);
-      if (btn) btn.textContent = '쿼리';
-    }
-  });
-
-  const cnt = document.getElementById('visible-count');
-  if (cnt) cnt.textContent = `${visible}개 표시`;
-}
-
-/* ────────────────────────────────────────
-   토스트 알림
-──────────────────────────────────────── */
-function showToast(msg, type = 'ok') {
-  let toast = document.getElementById('toast-msg');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'toast-msg';
-    toast.style.cssText = `
-      position:fixed; bottom:28px; right:28px;
-      padding:12px 20px; border-radius:8px;
-      font-size:13px; font-weight:500;
-      box-shadow:0 4px 16px rgba(0,0,0,.18);
-      z-index:9999; transition:opacity .4s;
-    `;
-    document.body.appendChild(toast);
-  }
-
-  toast.textContent = msg;
-  toast.style.opacity = '1';
-
-  if (type === 'ok') {
-    toast.style.background = '#27ae60';
-    toast.style.color      = '#fff';
-  } else {
-    toast.style.background = '#e74c3c';
-    toast.style.color      = '#fff';
-  }
-
-  clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => {
-    toast.style.opacity = '0';
-  }, 3000);
-}
-
-/* ────────────────────────────────────────
-   SR 적용 / 취소 (담당자화면)
+   SR 적용 / 취소 (운영자 화면)
 ──────────────────────────────────────── */
 async function mgrApplySr(groupId) {
   if (!CAN_EDIT_MGR) { showToast(PERM_DENIED_MSG, 'warn'); return; }
   const inp = document.getElementById('msr-' + groupId);
   const sr  = inp ? inp.value.trim() : '';
 
-  const r = await postJSON('/dml/developer/apply-sr', { group_id: parseInt(groupId), sr_no: sr });
+  const r = await postJSON('/dml/manager/apply-sr', { group_id: parseInt(groupId), sr_no: sr });
   if (r._forbidden) return;
   if (r.ok) {
     const uiStatus = r.group ? (r.group.ui_status || '비정상') : '비정상';
@@ -557,7 +492,7 @@ async function mgrApplySr(groupId) {
 async function mgrClearSr(groupId) {
   if (!CAN_EDIT_MGR) { showToast(PERM_DENIED_MSG, 'warn'); return; }
   if (!confirmAction(`그룹 ${groupId}의 SR을 제거할까요?`)) return;
-  const r = await postJSON('/dml/developer/clear-sr', { group_id: parseInt(groupId) });
+  const r = await postJSON('/dml/manager/clear-sr', { group_id: parseInt(groupId) });
   if (r._forbidden) return;
   if (r.ok) {
     showToast(`그룹 ${groupId} SR 제거`, 'ok');
@@ -594,6 +529,7 @@ function _mgrSetApplied(groupId, sr, uiStatus, grp) {
   if (row) { row.dataset.status = uiStatus; row.style.background = _mgrRowBg(uiStatus); }
 
   if (st) {
+    st.dataset.v = uiStatus;
     let html = badgeHtml;
     if (uiStatus === '비정상') {
       const reason = (row ? row.dataset.reason : '') || '';
@@ -634,7 +570,7 @@ function _mgrSetPending(groupId) {
   const inp = document.getElementById('msr-'     + groupId);
 
   if (row) { row.dataset.status = '미적용'; row.style.background = '#fff5f5'; }
-  if (st)  st.innerHTML = '<span class="badge badge-bad">미적용</span>';
+  if (st)  { st.innerHTML = '<span class="badge badge-bad">미적용</span>'; st.dataset.v = '미적용'; }
   if (clr) clr.style.display = 'none';
   if (inp) {
     inp.value = '';
@@ -644,7 +580,7 @@ function _mgrSetPending(groupId) {
 }
 
 /* ────────────────────────────────────────
-   DML여부 토글 (담당자화면)
+   DML여부 토글 (운영자 화면)
 ──────────────────────────────────────── */
 async function mgrToggleDml(groupId, isDml) {
   if (!CAN_EDIT_MGR) { showToast(PERM_DENIED_MSG, 'warn'); return; }
@@ -653,11 +589,13 @@ async function mgrToggleDml(groupId, isDml) {
     : `그룹 ${groupId}을 비DML(SR 불필요)로 표시할까요?\n정상·적용완료로 처리됩니다.`;
   if (!confirmAction(label)) return;
 
-  const r = await postJSON('/dml/developer/set-dml', { group_id: parseInt(groupId), is_dml: isDml });
+  const r = await postJSON('/dml/manager/set-dml', { group_id: parseInt(groupId), is_dml: isDml });
   if (r._forbidden) return;
   if (r.ok) {
     const row = document.getElementById('mrow-' + groupId);
     if (row) row.dataset.isDml = isDml ? 'true' : 'false';
+    const dmlCell = document.getElementById('mdml-cell-' + groupId);
+    if (dmlCell) dmlCell.dataset.v = isDml ? 'DML' : '비DML';
 
     const btn = document.getElementById('mdml-btn-' + groupId);
     if (btn) {
@@ -738,7 +676,7 @@ async function mgrSaveReason() {
   if (_mgrReasonGroupId === null) return;
   const reason  = document.getElementById('reason-view').value.trim();
   const groupId = _mgrReasonGroupId;
-  const r = await postJSON('/dml/developer/set-reason',
+  const r = await postJSON('/dml/manager/set-reason',
                            { group_id: parseInt(groupId), reason });
   if (r.ok) {
     const row = document.getElementById('mrow-' + groupId);
@@ -753,7 +691,7 @@ async function mgrSaveReason() {
 }
 
 /* ────────────────────────────────────────
-   그룹 상세 토글 (담당자화면)
+   그룹 상세 토글 (운영자 화면)
 ──────────────────────────────────────── */
 const _mgrLogCache = {};
 
@@ -778,7 +716,7 @@ async function toggleMgrLogs(groupId) {
 
   btn.textContent = '…';
   try {
-    const res  = await fetch(`/dml/developer/group/${groupId}/logs`);
+    const res  = await fetch(`/dml/manager/group/${groupId}/logs`);
     const data = await res.json();
     let html;
     if (!data.ok || !data.logs || !data.logs.length) {
@@ -823,13 +761,8 @@ function _mEsc(s) {
    DOMContentLoaded 초기화
 ──────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
-  const si = document.getElementById('search-input');
-  const sf = document.getElementById('status-filter');
-  if (si) si.addEventListener('input',  applyFilters);
-  if (sf) sf.addEventListener('change', applyFilters);
-
-  // SR 입력칸 Enter → 적용
-  document.querySelectorAll('.m-sr-input').forEach(inp => {
+  // SR 입력칸 Enter → 적용 (수정 권한이 있을 때만)
+  if (CAN_EDIT_MGR) document.querySelectorAll('.m-sr-input').forEach(inp => {
     inp.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); mgrApplySr(inp.dataset.groupId); }
     });
@@ -845,8 +778,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeReasonModal();
   });
-
-  applyFilters();
 });
 </script>
 {% endblock %}

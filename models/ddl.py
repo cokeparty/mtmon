@@ -1,6 +1,6 @@
 # models/ddl.py  —  schema: ddl
 import enum
-from sqlalchemy import (Column, BigInteger, String, Text, Boolean,
+from sqlalchemy import (Column, BigInteger, String, Text,
                         TIMESTAMP, Index, ForeignKey, func)
 from db.database import Base
 
@@ -21,7 +21,6 @@ class DdlLog(Base):
         Index("idx_ddl_period_sys", "period_id", "system_code"),
         Index("idx_ddl_request",    "request_time"),
         Index("idx_ddl_type",       "ddl_type"),
-        Index("idx_ddl_abnormal",   "is_abnormal"),
         Index("idx_ddl_status",     "status"),
         Index("idx_ddl_sr",         "sr_no"),
         {"schema": "ddl"},
@@ -29,7 +28,7 @@ class DdlLog(Base):
 
     id            = Column(BigInteger, primary_key=True)
     period_id     = Column(BigInteger,
-                           ForeignKey("program_change.monitoring_period.id"),
+                           ForeignKey("common.monitoring_period.id"),
                            nullable=False)
     system_code   = Column(String(10),  nullable=False)
     request_time  = Column(TIMESTAMP,   nullable=False)
@@ -38,7 +37,6 @@ class DdlLog(Base):
     target_object = Column(String(150), nullable=False)
     ddl_type      = Column(String(10),  nullable=False)
     query_summary = Column(Text)
-    is_abnormal   = Column(Boolean, nullable=False, default=False)
     sr_no         = Column(String(30))
     status        = Column(String(10), nullable=False, default="미입력")
     created_at    = Column(TIMESTAMP, nullable=False, server_default=func.now())

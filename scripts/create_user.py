@@ -13,7 +13,7 @@ role 허용값: operator | developer | reviewer
 
 import sys
 from db.database import SessionLocal
-from models.auth import AppUser
+from models.account import AppUser
 from core.security import hash_password
 
 ALLOWED_ROLES = ("operator", "developer", "reviewer")

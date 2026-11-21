@@ -1,0 +1,610 @@
+{% extends "base.html" %}
+{% block title %}부서이동자(일간){% endblock %}
+
+{# 권한 표 한 줄 — HR / 전자조달 / PMS 공통 #}
+{% macro perm_table(tid, label, rows, kind) -%}
+  <div id="section-{{ tid }}" class="d-sec" style="display:none;">
+    <div class="tab-sum" id="sum-{{ tid }}"></div>
+    <div class="g-bar" id="bar-{{ tid }}">
+      <span class="g-count"></span>
+      <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+      <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table id="daily-table-{{ tid }}" class="g d-perm" data-grid data-grid-bar="#bar-{{ tid }}">
+      <thead>
+        <tr>
+          <th class="th" data-f>부서변경일</th>
+          {% if kind == 'hr' %}
+          <th class="th" data-f>부서명</th>
+          <th class="th" data-f>사번</th>
+          <th class="th" data-f>이름</th>
+          <th class="th" data-f>이전부서명</th>
+          <th class="th" data-f>Responsibility</th>
+          <th class="th" data-f>권한시작일</th>
+          {% else %}
+          <th class="th" data-f>부여권한</th>
+          <th class="th" data-f>role_cd</th>
+          <th class="th" data-f>사번</th>
+          <th class="th" data-f>이름</th>
+          <th class="th" data-f>권한등록일</th>
+          <th class="th" data-f>부서명</th>
+          <th class="th" data-f>이전부서명</th>
+          {% endif %}
+          <th class="th" data-f>SR번호</th>
+          <th class="th" data-f>SR 매핑</th>
+          <th class="th" data-f style="text-align:center;">처리</th>
+          {% if perms.depart_daily >= 2 %}<th class="th" style="text-align:center;">작업</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if not rows %}
+        <tr data-no-filter><td colspan="13" style="text-align:center;color:#aaa;padding:24px;">{{ label }} 데이터가 없습니다.</td></tr>
+        {% endif %}
+        {% for r in rows %}
+        {% set sr_ok = r.sr_no and r.sr_title %}
+        <tr data-rid="{{ r.id }}" data-type="{{ r.record_type }}"
+            data-action="{{ r.action if r.action else 'none' }}" data-srok="{{ '1' if sr_ok else '0' }}"
+            style="{% if not r.action %}background:#fffbea;{% elif r.action == '회수' %}background:#fff5f5;{% endif %}">
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+          {% if kind == 'hr' %}
+          <td class="td ellip" title="{{ r.dept_name }}">{{ r.dept_name }}</td>
+          <td class="td">{{ r.empno }}</td>
+          <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+          <td class="td ellip" style="color:#6a737d;" title="{{ r.prev_dept_name }}">{{ r.prev_dept_name }}</td>
+          <td class="td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="{{ r.role_name }}">{{ r.role_name }}</td>
+          <td class="td" style="color:#6a737d;">{{ r.reg_date }}</td>
+          {% else %}
+          <td class="td" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;" title="{{ r.role_name }}">{{ r.role_name }}</td>
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.role_code }}</td>
+          <td class="td">{{ r.empno }}</td>
+          <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+          <td class="td" style="color:#6a737d;">{{ r.reg_date }}</td>
+          <td class="td ellip" title="{{ r.dept_name }}">{{ r.dept_name }}</td>
+          <td class="td ellip" style="color:#6a737d;" title="{{ r.prev_dept_name }}">{{ r.prev_dept_name }}</td>
+          {% endif %}
+          <td class="td">
+            <input type="text" class="sr-input" data-rid="{{ r.id }}" value="{{ r.sr_no }}"
+                   {% if perms.depart_daily >= 2 %}placeholder="SR번호"{% else %}readonly{% endif %}
+                   style="width:130px;font-size:12px;
+                     {% if sr_ok %}background:#f0fdf4;border-color:#86efac;
+                     {% elif r.sr_no %}background:#fef2f2;border-color:#fca5a5;{% endif %}">
+            {% if perms.depart_daily >= 2 %}<button class="btn btn-sm" onclick="saveSr({{ r.id }})">저장</button>{% endif %}
+          </td>
+          <td class="td sr-map-status" data-rid="{{ r.id }}"
+              style="{% if sr_ok %}color:#16a34a;{% elif r.sr_no %}color:#dc2626;{% endif %}">
+            {% if sr_ok %}매핑됨{% elif r.sr_no %}SR DB에 없음{% else %}미입력{% endif %}
+          </td>
+          <td class="td status-cell" data-rid="{{ r.id }}" style="text-align:center;">
+            {% if r.action == '유지' %}<span class="badge badge-ok">유지</span>
+            {% elif r.action == '회수' %}<span class="badge badge-bad">회수</span>
+            {% else %}<span class="badge badge-warn">미처리</span>{% endif %}
+          </td>
+          {% if perms.depart_daily >= 2 %}
+          <td class="td" style="text-align:center;">
+            <button class="btn btn-sm btn-primary" data-action-btn="유지" data-rid="{{ r.id }}"
+                    onclick="setAction({{ r.id }}, '유지')"
+                    {% if r.action == '유지' %}style="opacity:0.4"{% endif %}>유지</button>
+            <button class="btn btn-sm" data-action-btn="회수" data-rid="{{ r.id }}"
+                    onclick="setAction({{ r.id }}, '회수')"
+                    style="color:var(--bad);border-color:#E3A491;{% if r.action == '회수' %}opacity:0.4{% endif %}">회수</button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+{%- endmacro %}
+
+{# 퇴직자 · 부서변경자 표 #}
+{% macro person_table(tid, label, rows, kind) -%}
+  <div id="section-{{ tid }}" class="d-sec" style="display:none;">
+    <div class="g-bar" id="bar-{{ tid }}">
+      <span class="g-count"></span>
+      <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+      <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table id="daily-table-{{ tid }}" class="g" data-grid data-grid-bar="#bar-{{ tid }}">
+      <thead>
+        <tr>
+          <th class="th" data-f>{{ '데이터 변경일' if kind == 'resign' else '부서변경일' }}</th>
+          <th class="th" data-f>사번</th>
+          <th class="th" data-f>이름</th>
+          <th class="th" data-f>부서코드</th>
+          <th class="th" data-f>부서명</th>
+          {% if kind == 'resign' %}
+          <th class="th" data-f>퇴직일</th>
+          {% else %}
+          <th class="th" data-f>이전부서코드</th>
+          <th class="th" data-f>이전부서명</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if not rows %}
+        <tr data-no-filter><td colspan="7" style="text-align:center;color:#aaa;padding:24px;">{{ label }} 데이터가 없습니다.</td></tr>
+        {% endif %}
+        {% for r in rows %}
+        <tr data-type="{{ r.record_type }}">
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+          <td class="td">{{ r.empno }}</td>
+          <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
+          <td class="td">{{ r.dept_name }}</td>
+          {% if kind == 'resign' %}
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+          {% else %}
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.prev_dept_code }}</td>
+          <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% block content %}
+{% set _resign = records | selectattr('record_type', 'in', ['퇴직자','퇴직자(협력)']) | list %}
+{% set _dept   = records | selectattr('record_type', 'equalto', '부서변경자') | list %}
+{% set _hr     = records | selectattr('record_type', 'equalto', 'HR권한') | list %}
+{% set _epro   = records | selectattr('record_type', 'equalto', '전자조달권한') | list %}
+{% set _pms    = records | selectattr('record_type', 'equalto', 'PMS권한') | list %}
+
+<div class="page-head">
+  <h2>부서이동자 <span class="muted-tag">일간</span></h2>
+  <div class="actions">
+    {% if last_batch_at %}<span class="page-meta">마지막 일간 배치 {{ last_batch_at }}</span><span class="tb-sep"></span>{% endif %}
+    <label for="daily-period-select">기준월</label>
+    <input type="month" id="daily-period-select" value="{{ year_month }}"
+           onchange="goMonth(this.value)">
+  </div>
+</div>
+
+{% if db_error %}
+<div class="db-error-banner">DB 연결 실패 — 서버에 접속할 수 없습니다.</div>
+{% endif %}
+
+<!-- KPI -->
+<div class="card-grid">
+  <div class="card">
+    <div class="card-title">전체</div>
+    <div class="card-num">{{ summary.total | default(0) }}</div>
+    <div class="card-sub">오늘 기준 누적</div>
+  </div>
+  <div class="card {% if summary.pending > 0 %}warn{% else %}ok{% endif %}" id="kpi-pending-card">
+    <div class="card-title">미처리 (권한건)</div>
+    <div class="card-num" id="kpi-pending">{{ summary.pending | default(0) }}</div>
+    <div class="card-sub">HR·전자조달·PMS 중 유지/회수 미결정</div>
+  </div>
+</div>
+
+<!-- 탭 (건수 · 미처리 건수 표시) — 선택한 탭은 주소(?tab=)에 남아 새로고침해도 유지 -->
+<div class="tabs" id="dailyTabs">
+  {% for key, label, rows in [('all','전체',records),('resign','퇴직자',_resign),('dept','부서변경자',_dept),
+                              ('hr','HR권한',_hr),('epro','전자조달권한',_epro),('pms','PMS권한',_pms)] %}
+  <button class="tab" data-tab="{{ key }}" onclick="showTab('{{ key }}')">{{ label }}
+    <span class="tab-cnt">{{ rows | length }}{% if key in ['hr','epro','pms'] %} · <span class="tab-pend" id="tab-pend-{{ key }}">미처리 {{ rows | rejectattr('action') | list | length }}</span>{% endif %}</span>
+  </button>
+  {% endfor %}
+</div>
+
+<div class="section">
+  {% if not records %}
+    <div class="empty">데이터가 없습니다. (일간 수집은 '배치관리' 화면에서 실행)</div>
+  {% else %}
+
+  {# ──────────────────────────────────────────────────────────
+     ① 전체 탭 — 유형별 요약 + 접이식 표 (보기 전용)
+  ────────────────────────────────────────────────────────── #}
+  <div id="section-all">
+    {% set _hr_pend   = _hr   | rejectattr('action') | list | length %}
+    {% set _epro_pend = _epro | rejectattr('action') | list | length %}
+    {% set _pms_pend  = _pms  | rejectattr('action') | list | length %}
+
+    <div class="acc-strip">
+      <div class="acc-kpi">
+        <div class="acc-kpi-num">{{ _resign | length }}</div>
+        <div class="acc-kpi-label">퇴직자</div>
+      </div>
+      <div class="acc-kpi">
+        <div class="acc-kpi-num">{{ _dept | length }}</div>
+        <div class="acc-kpi-label">부서변경자</div>
+      </div>
+      <div class="acc-kpi {% if _hr_pend > 0 %}acc-kpi-warn{% endif %}">
+        <div class="acc-kpi-num">{{ _hr | length }}</div>
+        <div class="acc-kpi-label">HR권한{% if _hr_pend > 0 %} <span class="acc-pending">(미처리 {{ _hr_pend }})</span>{% endif %}</div>
+      </div>
+      <div class="acc-kpi {% if _epro_pend > 0 %}acc-kpi-warn{% endif %}">
+        <div class="acc-kpi-num">{{ _epro | length }}</div>
+        <div class="acc-kpi-label">전자조달{% if _epro_pend > 0 %} <span class="acc-pending">(미처리 {{ _epro_pend }})</span>{% endif %}</div>
+      </div>
+      <div class="acc-kpi {% if _pms_pend > 0 %}acc-kpi-warn{% endif %}">
+        <div class="acc-kpi-num">{{ _pms | length }}</div>
+        <div class="acc-kpi-label">PMS{% if _pms_pend > 0 %} <span class="acc-pending">(미처리 {{ _pms_pend }})</span>{% endif %}</div>
+      </div>
+    </div>
+
+    {# ── 퇴직자 #}
+    <div class="acc-sec" id="acc-resign">
+      <div class="acc-hdr" onclick="toggleAcc('acc-resign')">
+        <span class="acc-hdr-title">퇴직자 <span class="badge badge-bad" style="font-size:11px;">{{ _resign | length }}건</span></span>
+        <span class="acc-chev"></span>
+      </div>
+      <div class="acc-body" style="overflow-x:auto;">
+        <table id="acc-table-resign" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+            <th class="th">데이터 변경일</th><th class="th">사번</th><th class="th">이름</th>
+            <th class="th">부서코드</th><th class="th">부서명</th><th class="th">퇴직일</th>
+          </tr></thead>
+          <tbody>
+            {% if not _resign %}<tr><td colspan="6" style="text-align:center;color:#aaa;padding:14px;">데이터 없음</td></tr>{% endif %}
+            {% for r in _resign %}
+            <tr data-type="{{ r.record_type }}" style="border-bottom:1px solid #eaecef;">
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+              <td class="td">{{ r.empno }}</td>
+              <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+              <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
+              <td class="td">{{ r.dept_name }}</td>
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── 부서변경자 #}
+    <div class="acc-sec" id="acc-dept">
+      <div class="acc-hdr" onclick="toggleAcc('acc-dept')">
+        <span class="acc-hdr-title">부서변경자 <span class="badge badge-pending" style="font-size:11px;">{{ _dept | length }}건</span></span>
+        <span class="acc-chev"></span>
+      </div>
+      <div class="acc-body" style="overflow-x:auto;">
+        <table id="acc-table-dept" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+            <th class="th">부서변경일</th><th class="th">사번</th><th class="th">이름</th>
+            <th class="th">부서코드</th><th class="th">부서명</th>
+            <th class="th">이전부서코드</th><th class="th">이전부서명</th>
+          </tr></thead>
+          <tbody>
+            {% if not _dept %}<tr><td colspan="7" style="text-align:center;color:#aaa;padding:14px;">데이터 없음</td></tr>{% endif %}
+            {% for r in _dept %}
+            <tr data-type="{{ r.record_type }}" style="border-bottom:1px solid #eaecef;">
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+              <td class="td">{{ r.empno }}</td>
+              <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+              <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
+              <td class="td">{{ r.dept_name }}</td>
+              <td class="td" style="color:#6a737d;font-size:12px;">{{ r.prev_dept_code }}</td>
+              <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── HR권한 #}
+    <div class="acc-sec" id="acc-hr">
+      <div class="acc-hdr" onclick="toggleAcc('acc-hr')">
+        <span class="acc-hdr-title">
+          HR권한 <span class="badge badge-ok" style="font-size:11px;">{{ _hr | length }}건</span>
+          {% if _hr_pend > 0 %}<span class="badge badge-warn" style="font-size:11px;margin-left:4px;">미처리 {{ _hr_pend }}</span>{% endif %}
+        </span>
+        <span class="acc-chev"></span>
+      </div>
+      <div class="acc-body" style="overflow-x:auto;">
+        <table id="acc-table-hr" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+            <th class="th">부서변경일</th><th class="th">부서명</th><th class="th">사번</th>
+            <th class="th">이름</th><th class="th">이전부서명</th>
+            <th class="th">Responsibility</th><th class="th">권한시작일</th>
+            <th class="th col-action" style="text-align:center;">처리</th>
+          </tr></thead>
+          <tbody>
+            {% if not _hr %}<tr><td colspan="8" style="text-align:center;color:#aaa;padding:14px;">데이터 없음</td></tr>{% endif %}
+            {% for r in _hr %}
+            <tr data-type="{{ r.record_type }}" data-action="{{ r.action if r.action else 'none' }}"
+                style="border-bottom:1px solid #eaecef;
+                  {% if not r.action %}background:#fffbea;{% endif %}
+                  {% if r.action == '회수' %}background:#fff5f5;{% endif %}">
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+              <td class="td">{{ r.dept_name }}</td>
+              <td class="td">{{ r.empno }}</td>
+              <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+              <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+              <td class="td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.role_name }}">{{ r.role_name }}</td>
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.reg_date }}</td>
+              <td class="td" style="text-align:center;">
+                {% if r.action == '유지' %}<span class="badge badge-ok">유지</span>
+                {% elif r.action == '회수' %}<span class="badge badge-bad">회수</span>
+                {% else %}<span class="badge badge-warn">미처리</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── 전자조달권한 #}
+    <div class="acc-sec" id="acc-epro">
+      <div class="acc-hdr" onclick="toggleAcc('acc-epro')">
+        <span class="acc-hdr-title">
+          전자조달권한 <span class="badge badge-warn" style="font-size:11px;">{{ _epro | length }}건</span>
+          {% if _epro_pend > 0 %}<span class="badge badge-warn" style="font-size:11px;margin-left:4px;">미처리 {{ _epro_pend }}</span>{% endif %}
+        </span>
+        <span class="acc-chev"></span>
+      </div>
+      <div class="acc-body" style="overflow-x:auto;">
+        <table id="acc-table-epro" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+            <th class="th">부서변경일</th><th class="th">부여권한</th><th class="th">role_cd</th>
+            <th class="th">사번</th><th class="th">이름</th><th class="th">권한등록일</th>
+            <th class="th">부서명</th><th class="th">이전부서명</th>
+            <th class="th" style="text-align:center;">처리</th>
+          </tr></thead>
+          <tbody>
+            {% if not _epro %}<tr><td colspan="9" style="text-align:center;color:#aaa;padding:14px;">데이터 없음</td></tr>{% endif %}
+            {% for r in _epro %}
+            <tr data-type="{{ r.record_type }}" data-action="{{ r.action if r.action else 'none' }}"
+                style="border-bottom:1px solid #eaecef;
+                  {% if not r.action %}background:#fffbea;{% endif %}
+                  {% if r.action == '회수' %}background:#fff5f5;{% endif %}">
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+              <td class="td" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.role_name }}">{{ r.role_name }}</td>
+              <td class="td" style="color:#6a737d;font-size:12px;">{{ r.role_code }}</td>
+              <td class="td">{{ r.empno }}</td>
+              <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.reg_date }}</td>
+              <td class="td">{{ r.dept_name }}</td>
+              <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+              <td class="td" style="text-align:center;">
+                {% if r.action == '유지' %}<span class="badge badge-ok">유지</span>
+                {% elif r.action == '회수' %}<span class="badge badge-bad">회수</span>
+                {% else %}<span class="badge badge-warn">미처리</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── PMS권한 #}
+    <div class="acc-sec" id="acc-pms">
+      <div class="acc-hdr" onclick="toggleAcc('acc-pms')">
+        <span class="acc-hdr-title">
+          PMS권한 <span class="badge badge-done" style="font-size:11px;">{{ _pms | length }}건</span>
+          {% if _pms_pend > 0 %}<span class="badge badge-warn" style="font-size:11px;margin-left:4px;">미처리 {{ _pms_pend }}</span>{% endif %}
+        </span>
+        <span class="acc-chev"></span>
+      </div>
+      <div class="acc-body" style="overflow-x:auto;">
+        <table id="acc-table-pms" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+            <th class="th">부서변경일</th><th class="th">부여권한</th><th class="th">role_cd</th>
+            <th class="th">사번</th><th class="th">이름</th><th class="th">권한등록일</th>
+            <th class="th">부서명</th><th class="th">이전부서명</th>
+            <th class="th" style="text-align:center;">처리</th>
+          </tr></thead>
+          <tbody>
+            {% if not _pms %}<tr><td colspan="9" style="text-align:center;color:#aaa;padding:14px;">데이터 없음</td></tr>{% endif %}
+            {% for r in _pms %}
+            <tr data-type="{{ r.record_type }}" data-action="{{ r.action if r.action else 'none' }}"
+                style="border-bottom:1px solid #eaecef;
+                  {% if not r.action %}background:#fffbea;{% endif %}
+                  {% if r.action == '회수' %}background:#fff5f5;{% endif %}">
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+              <td class="td" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.role_name }}">{{ r.role_name }}</td>
+              <td class="td" style="color:#6a737d;font-size:12px;">{{ r.role_code }}</td>
+              <td class="td">{{ r.empno }}</td>
+              <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+              <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.reg_date }}</td>
+              <td class="td">{{ r.dept_name }}</td>
+              <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+              <td class="td" style="text-align:center;">
+                {% if r.action == '유지' %}<span class="badge badge-ok">유지</span>
+                {% elif r.action == '회수' %}<span class="badge badge-bad">회수</span>
+                {% else %}<span class="badge badge-warn">미처리</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {{ person_table('resign', '퇴직자', _resign, 'resign') }}
+  {{ person_table('dept', '부서변경자', _dept, 'dept') }}
+  {{ perm_table('hr', 'HR권한', _hr, 'hr') }}
+  {{ perm_table('epro', '전자조달권한', _epro, 'perm') }}
+  {{ perm_table('pms', 'PMS권한', _pms, 'perm') }}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+  .th.col-action { width: 72px; text-align: center; }
+  .section > div[id^="section-"] { margin-left: 0; margin-right: 0; }
+  #section-all { padding: 0 10px; }
+  .d-sec { padding: 8px 10px 0; }
+
+  /* 탭 건수 */
+  .tab .tab-cnt { margin-left: 4px; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+  .tab .tab-pend.on { color: var(--bad); font-weight: 700; }
+
+  /* 권한 탭 요약 줄 */
+  .tab-sum { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 6px 10px;
+             background: var(--hdr); border: 1px solid var(--line-soft); font-size: 12.5px; color: var(--ink-2); }
+  .tab-sum b { color: var(--ink); font-size: 14px; }
+  .tab-sum .sep { width: 1px; height: 14px; background: var(--line); }
+  .tab-sum .pend b { color: var(--bad); }
+
+  /* 전체 탭: 유형별 요약 띠 */
+  .acc-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 10px; border: 1px solid var(--line); }
+  .acc-kpi { padding: 8px 14px; border-right: 1px solid var(--line-soft); background: #FFFFFF; }
+  .acc-kpi:last-child { border-right: none; }
+  .acc-kpi-num { font-size: 20px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .acc-kpi-label { font-size: 12px; color: var(--muted); }
+  .acc-kpi-warn .acc-kpi-num { color: var(--warn); }
+  .acc-pending { font-size: 11.5px; color: var(--warn); font-weight: 700; }
+
+  /* 전체 탭: 접이식 표 */
+  .acc-sec { margin-bottom: 8px; border: 1px solid var(--line); }
+  .acc-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 32px; padding: 0 10px; cursor: pointer; user-select: none;
+    background: var(--chrome); border-bottom: 1px solid var(--line);
+  }
+  .acc-hdr:hover { background: #DDDFE3; }
+  .acc-hdr-title { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+  .acc-chev { font-size: 11.5px; color: var(--muted); }
+  .acc-chev::after { content: '접기'; }
+  .acc-sec.collapsed .acc-chev::after { content: '펼치기'; }
+  .acc-sec.collapsed .acc-hdr { border-bottom: none; }
+
+  .status-cell { width: 72px; text-align: center; }
+  .ellip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .d-perm td { white-space: nowrap; }
+  .d-perm .sr-input { width: 130px !important; }
+  .sr-map-status { font-size: 12px; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CAN_EDIT = {{ 'true' if perms.depart_daily >= 2 else 'false' }};   // 유지/회수 · SR 입력 권한
+const TABS = ['all', 'resign', 'dept', 'hr', 'epro', 'pms'];
+const PERM_TABS = {hr: 'HR권한', epro: '전자조달권한', pms: 'PMS권한'};
+
+/* ── 탭 전환 (선택한 탭은 주소에 남겨 새로고침해도 유지) ── */
+function showTab(key) {
+  if (!TABS.includes(key)) key = 'all';
+  document.querySelectorAll('#dailyTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === key));
+  TABS.forEach(k => {
+    const sec = document.getElementById('section-' + k);
+    if (sec) sec.style.display = (k === key) ? '' : 'none';
+  });
+  const url = new URL(location.href);
+  url.searchParams.set('tab', key);
+  history.replaceState(null, '', url);
+}
+
+function goMonth(ym) {
+  const url = new URL(location.href);
+  url.searchParams.set('year_month', ym);
+  location.href = url.toString();
+}
+
+/* ── 권한 탭 건수 (전체 · 처리 · 미처리 · SR 미입력) — 처리할 때마다 다시 센다 ── */
+function recount() {
+  let pendAll = 0;
+  Object.keys(PERM_TABS).forEach(k => {
+    const rows = [...document.querySelectorAll(`#daily-table-${k} tbody tr[data-rid]`)];
+    const total = rows.length;
+    const pend  = rows.filter(r => (r.dataset.action || 'none') === 'none').length;
+    const noSr  = rows.filter(r => r.dataset.srok !== '1').length;
+    pendAll += pend;
+    const tp = document.getElementById('tab-pend-' + k);
+    if (tp) { tp.textContent = '미처리 ' + pend; tp.classList.toggle('on', pend > 0); }
+    const sum = document.getElementById('sum-' + k);
+    if (sum) sum.innerHTML =
+      `<span>전체 <b>${total}</b>건</span><span class="sep"></span>` +
+      `<span>처리(유지·회수) <b>${total - pend}</b>건</span><span class="sep"></span>` +
+      `<span class="${pend ? 'pend' : ''}">미처리 <b>${pend}</b>건</span><span class="sep"></span>` +
+      `<span class="${noSr ? 'pend' : ''}">SR 미처리(미입력·미매핑) <b>${noSr}</b>건</span>`;
+  });
+  const kp = document.getElementById('kpi-pending');
+  if (kp) kp.textContent = pendAll;
+  const kc = document.getElementById('kpi-pending-card');
+  if (kc) { kc.classList.toggle('warn', pendAll > 0); kc.classList.toggle('ok', pendAll === 0); }
+}
+
+/* ── SR 저장 + 실시간 검증 ── */
+async function saveSr(recordId) {
+  if (!CAN_EDIT) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const inp = document.querySelector(`.sr-input[data-rid="${recordId}"]`);
+  const sr = inp ? inp.value.trim() : '';
+
+  const r = await postJSON('/depart/daily/sr', { record_id: recordId, sr_no: sr });
+  if (r.ok) {
+    const found = r.sr_found;
+    if (inp) {
+      inp.value = sr;
+      inp.style.background  = found ? '#f0fdf4' : (sr ? '#fef2f2' : '');
+      inp.style.borderColor = found ? '#86efac' : (sr ? '#fca5a5' : '');
+    }
+    document.querySelectorAll(`.sr-map-status[data-rid="${recordId}"]`).forEach(td => {
+      td.textContent = found ? '매핑됨' : (sr ? 'SR DB에 없음' : '미입력');
+      td.style.color = found ? '#16a34a' : (sr ? '#dc2626' : '');
+    });
+    document.querySelectorAll(`tr[data-rid="${recordId}"]`).forEach(tr => { tr.dataset.srok = found ? '1' : '0'; });
+    recount();
+    const msg = !sr ? 'SR번호를 지웠습니다'
+      : found ? `SR ${sr} 저장 완료 — ${r.record.sr_title || ''}` : `SR ${sr} 저장됨 (SR DB에 없음)`;
+    showToast(msg, found || !sr ? 'ok' : 'warn');
+  } else if (!r._forbidden) {
+    showToast(r.message || '저장 실패', 'bad');
+  }
+}
+
+/* ── 유지/회수 처리 ── */
+async function setAction(recordId, action) {
+  if (!CAN_EDIT) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const inp = document.querySelector(`.sr-input[data-rid="${recordId}"]`);
+  const sr = inp ? inp.value.trim() : '';
+
+  const r = await postJSON('/depart/daily/action', {
+    record_id: recordId, action: action, sr_no: sr || null
+  });
+  if (r.ok) {
+    showToast(`${action} 처리 완료`, 'ok');
+    document.querySelectorAll(`.status-cell[data-rid="${recordId}"]`).forEach(st => {
+      st.innerHTML = action === '유지'
+        ? '<span class="badge badge-ok">유지</span>'
+        : '<span class="badge badge-bad">회수</span>';
+    });
+    document.querySelectorAll(`tr[data-rid="${recordId}"]`).forEach(tr => {
+      tr.dataset.action = action;
+      tr.style.background = action === '회수' ? '#fff5f5' : '';
+    });
+    document.querySelectorAll(`[data-action-btn][data-rid="${recordId}"]`).forEach(btn => {
+      btn.style.opacity = btn.dataset.actionBtn === action ? '0.4' : '';
+    });
+    recount();
+  } else if (!r._forbidden) {
+    showToast(r.message || '처리 실패', 'bad');
+  }
+}
+
+function toggleAcc(id) {
+  const sec = document.getElementById(id);
+  sec.classList.toggle('collapsed');
+  const body = sec.querySelector('.acc-body');
+  body.style.display = sec.classList.contains('collapsed') ? 'none' : '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  showTab(new URLSearchParams(location.search).get('tab') || 'all');
+  recount();
+
+  /* SR 입력란 Enter 키 → 저장 (한글 조합 중 Enter 무시) */
+  if (CAN_EDIT) document.body.addEventListener('keydown', (e) => {
+    const inp = e.target.closest('input.sr-input[data-rid]');
+    if (!inp || e.key !== 'Enter') return;
+    if (e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    const rid = parseInt(inp.dataset.rid, 10);
+    if (!isNaN(rid)) saveSr(rid);
+  });
+});
+</script>
+{% endblock %}

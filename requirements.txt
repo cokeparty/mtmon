@@ -18,8 +18,17 @@ paramiko==3.5.0
 openpyxl==3.1.5
 pandas>=2.2.3
 
-# ── Date Utility (배치 스크립트 전월 산정) ──
+# ── Date Utility ──
 python-dateutil==2.9.0.post0
+
+# ── DB 구조 자동 변경 (마이그레이션) ──
+alembic==1.14.0
+
+# ── 배치 스케줄러 (앱 내 실행, cron 대체) ──
+APScheduler==3.10.4
+
+# ── Oracle (부서이동자 수집) ──
+oracledb>=2.0
 
 # ── auth ──
 passlib[bcrypt]==1.7.4

@@ -1,24 +1,22 @@
 import re
-from pathlib import Path
+from datetime import datetime
 
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from config import settings
 from core.deps import get_current_user
+from core.web import render
 from db.database import get_db
-from models.auth import AppUser
+from models.account import AppUser
 from core.security import verify_password, hash_password
 
 router = APIRouter()
-BASE_DIR  = Path(__file__).resolve().parent.parent
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 _LOGIN_ID_RE = re.compile(r'^[a-z0-9_]{4,20}$')
-_VALID_ROLES = {"operator", "developer", "reviewer", "viewer"}
+REGISTER_ROLE = "viewer"   # 회원가입 시 부여하는 역할 (역할관리에서 삭제 불가)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -26,7 +24,7 @@ async def login_form(request: Request):
     # 이미 로그인 상태면 대시보드로
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return render(request, "login.html", {"error": None})
 
 
 @router.post("/login")
@@ -37,9 +35,7 @@ async def login_submit(
     db: Session = Depends(get_db),
 ):
     def _login_error(msg: str):
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": msg, "login_id": login_id},
+        return render(request, "login.html", {"error": msg, "login_id": login_id},
             status_code=401,
         )
 
@@ -58,6 +54,7 @@ async def login_submit(
             request.session["user_id"] = -1
             request.session["name"]    = settings.DEV_USER_NAME
             request.session["role"]    = settings.DEV_USER_ROLE
+            request.session["login_id"] = dev_id
             return RedirectResponse("/", status_code=303)
         return _login_error("DB에 연결할 수 없습니다. 임시 계정을 사용하거나 관리자에게 문의하세요.")
 
@@ -70,6 +67,10 @@ async def login_submit(
     request.session["user_id"] = user.id
     request.session["role"]    = user.role
     request.session["name"]    = user.name
+    request.session["login_id"] = user.login_id
+
+    user.last_login_at = datetime.now()
+    db.commit()
 
     return RedirectResponse("/", status_code=303)
 
@@ -85,9 +86,7 @@ async def logout(request: Request):
 async def register_form(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("register.html", {
-        "request": request,
-        "error": None,
+    return render(request, "register.html", {"error": None,
         "success": None,
         "form": {},
     })
@@ -103,8 +102,8 @@ async def register_submit(
     password_confirm: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    # 회원가입은 항상 viewer 고정
-    role = "viewer"
+    # 회원가입은 항상 조회자 역할
+    role = REGISTER_ROLE
     form_data = {
         "login_id": login_id,
         "name":     name,
@@ -112,9 +111,7 @@ async def register_submit(
     }
 
     def err(msg: str):
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": msg, "success": None, "form": form_data},
+        return render(request, "register.html", {"error": msg, "success": None, "form": form_data},
             status_code=400,
         )
 
@@ -141,9 +138,7 @@ async def register_submit(
     db.add(user)
     db.commit()
 
-    return templates.TemplateResponse("register.html", {
-        "request": request,
-        "error":   None,
+    return render(request, "register.html", {"error":   None,
         "success": "계정이 생성되었습니다. 조회자(viewer) 역할로 가입되었으며, 다른 역할이 필요하면 관리자에게 문의해 주세요.",
         "form":    {},
     })
@@ -155,9 +150,7 @@ async def change_password_form(
     request: Request,
     current_user: AppUser = Depends(get_current_user),
 ):
-    return templates.TemplateResponse("change_password.html", {
-        "request":      request,
-        "current_user": current_user,
+    return render(request, "change_password.html", {
         "error":        None,
         "success":      None,
     })
@@ -173,9 +166,7 @@ async def change_password_submit(
     db: Session = Depends(get_db),
 ):
     def _err(msg: str):
-        return templates.TemplateResponse("change_password.html", {
-            "request":      request,
-            "current_user": current_user,
+        return render(request, "change_password.html", {
             "error":        msg,
             "success":      None,
         }, status_code=400)
@@ -193,9 +184,7 @@ async def change_password_submit(
     user.password_hash = hash_password(new_password)
     db.commit()
 
-    return templates.TemplateResponse("change_password.html", {
-        "request":      request,
-        "current_user": current_user,
+    return render(request, "change_password.html", {
         "error":        None,
         "success":      "비밀번호가 변경되었습니다.",
     })

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}DML 모니터링 (개발자){% endblock %}
+{% block title %}데이터변경 개발자 화면{% endblock %}
 
 {% block content %}
 <!-- ══════════════════════════════════════════════
@@ -8,10 +8,26 @@
 <div class="page-head">
   <h2>
     데이터변경 (DML)
-    <span class="muted-tag">개발자 화면 · {{ current_user.name }}</span>
+    <span class="muted-tag">개발자 화면</span>
   </h2>
   <div class="actions">
-    <a class="btn" href="/dml/manager?year_month={{ period }}">담당자 화면</a>
+    <label for="dev-select">개발자</label>
+    <select id="dev-select" title="개발자를 고르면 그 사람의 그룹을 봅니다 (기본: 본인)">
+      {% set in_log = choices.in_log %}
+      {% if developer not in in_log and developer not in choices.others %}
+      <option value="{{ developer }}" selected>{{ developer }} (로그 없음)</option>
+      {% endif %}
+      <optgroup label="이 회차 DML 로그에 있는 사용자 ({{ in_log | length }}명)">
+        {% for n in in_log %}
+        <option value="{{ n }}" {% if n == developer %}selected{% endif %}>{{ n }}{% if n == current_user.name %} (본인){% endif %}</option>
+        {% endfor %}
+      </optgroup>
+      <optgroup label="로그에 없는 계정 ({{ choices.others | length }}명)">
+        {% for n in choices.others %}
+        <option value="{{ n }}" {% if n == developer %}selected{% endif %}>{{ n }}{% if n == current_user.name %} (본인){% endif %} — 로그 없음</option>
+        {% endfor %}
+      </optgroup>
+    </select>
     <span class="tb-sep"></span>
     <label for="period-select">회차</label>
     <input type="month" id="period-select" value="{{ period }}">
@@ -29,9 +45,9 @@
 ══════════════════════════════════════════════ -->
 <div class="card-grid">
   <div class="card">
-    <div class="card-title">내 그룹</div>
+    <div class="card-title">그룹</div>
     <div class="card-num">{{ summary.total | default(0) }}</div>
-    <div class="card-sub">{{ period }}</div>
+    <div class="card-sub">{{ period }} · {{ developer }}</div>
   </div>
   <div class="card ok">
     <div class="card-title">적용 완료</div>
@@ -61,7 +77,7 @@
      내 그룹 — SR 번호 입력
 ══════════════════════════════════════════════ -->
 <div class="section">
-  <h3>내 그룹 — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 그룹 내 모든 행에 적용 · 노란 칸 = 입력 필요</span></h3>
+  <h3>{{ developer }} 님의 그룹{% if perms.dml_developer >= 2 %} — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 그룹 내 모든 행에 적용 · 노란 칸 = 입력 필요</span>{% endif %}</h3>
   <div class="dml-legend">
     <span><span class="badge badge-bad" style="font-size:11px;">미적용</span> SR 미입력 또는 번호 없음</span>
     <span><span class="badge badge-warn" style="font-size:11px;">비정상</span> SR 작업승인일 전 실행·긴급 기한 초과</span>
@@ -70,32 +86,18 @@
 
   {% if not groups %}
   <div class="empty-state">
-  <div class="empty-title">담당하신 DML 그룹이 없습니다</div>
-  <div class="empty-desc">
-    <strong>{{ period }}</strong> 회차에 <strong>{{ current_user.name }}</strong>님께
-    배정된 DML 그룹이 없습니다.<br>
-    회차를 변경하거나, <strong>담당자 화면</strong>에서 그룹 배정 상태를 확인해 주세요.
+    <div class="empty-title">{{ developer }} 님의 DML 그룹이 없습니다</div>
+    <div class="empty-desc">
+      <strong>{{ period }}</strong> 회차 DML 로그에
+      {% if developer in choices.in_log %}<strong>{{ developer }}</strong> 님의 그룹이 없습니다.
+      {% else %}사용자명 <strong>{{ developer }}</strong> 이(가) 없습니다.{% endif %}<br>
+      위의 <strong>개발자</strong> 목록에서 다른 사람을 고르거나 회차를 바꿔 확인해 주세요.
+    </div>
   </div>
-  <div style="margin-top:18px;">
-    <a class="btn btn-primary" href="/dml/manager?year_month={{ period }}">
-      담당자 화면으로 이동
-    </a>
-  </div>
-</div>
   {% else %}
 
-  <!-- 빠른 필터 -->
-  <div class="filter-bar" style="margin-bottom:10px;">
-    <select id="dev-status-filter" onchange="applyDevFilter()">
-      <option value="all">전체</option>
-      <option value="미적용">미적용만</option>
-      <option value="비정상">비정상만</option>
-      <option value="정상">정상만</option>
-    </select>
-    <span id="dev-count" style="font-size:12px;color:#6a737d;"></span>
-  </div>
-
   <!-- ── 일괄 SR 적용 패널 ── -->
+  {% if perms.dml_developer >= 2 %}
   <div id="bulk-panel" class="bulkbar">
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
       <span style="font-size:12.5px;font-weight:700;white-space:nowrap;">일괄 SR 적용</span>
@@ -119,23 +121,31 @@
     </div>
   </div>
 
+  {% endif %}
+
+  <div class="g-bar" id="devBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+  </div>
+
   <div style="overflow-x:auto;">
-    <table id="dev-group-table" class="g">
+    <table id="dev-group-table" class="g" data-grid data-grid-bar="#devBar">
       <thead>
         <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
           <th class="th" style="width:40px;text-align:center;">#</th>
-          <th class="th">시스템</th>
-          <th class="th" style="width:80px;">접속계정</th>
-          <th class="th" style="width:110px;">대상 테이블</th>
-          <th class="th" style="text-align:right;width:60px;">건수</th>
-          <th class="th" style="width:160px;">기준시각</th>
-          <th class="th" style="width:140px;">SR 번호</th>
-          <th class="th" style="max-width:180px;">SR제목</th>
-          <th class="th" style="width:90px;">작업구분</th>
-          <th class="th" style="width:90px;">작업승인일</th>
-          <th class="th" style="width:90px;">SR종료일</th>
-          <th class="th" style="text-align:center;width:90px;">DML여부</th>
-          <th class="th" style="text-align:center;width:90px;">상태</th>
+          <th class="th" data-f>시스템</th>
+          <th class="th" data-f style="width:90px;">접속계정</th>
+          <th class="th" data-f style="width:120px;">대상 테이블</th>
+          <th class="th" data-f style="text-align:right;width:70px;">건수</th>
+          <th class="th" data-f style="width:160px;">기준시각</th>
+          <th class="th" data-f style="width:150px;">SR 번호</th>
+          <th class="th" data-f style="max-width:180px;">SR제목</th>
+          <th class="th" data-f style="width:100px;">작업구분</th>
+          <th class="th" data-f style="width:100px;">작업승인일</th>
+          <th class="th" data-f style="width:100px;">SR종료일</th>
+          <th class="th" data-f style="text-align:center;width:100px;">DML여부</th>
+          <th class="th" data-f style="text-align:center;width:100px;">상태</th>
           <th class="th" style="text-align:center;width:60px;">상세</th>
         </tr>
       </thead>
@@ -174,7 +184,7 @@
                   data-group-id="{{ g.group_id }}"
                   data-sr-no="{{ g.sr_no or '' }}"
                   value="{% if not g.is_dml %}DML이 아님{% else %}{{ g.sr_no or '' }}{% endif %}"
-                  placeholder="A01-YYYYMMDD-NNN"
+                  {% if perms.dml_developer >= 2 %}placeholder="A01-YYYYMMDD-NNN"{% else %}readonly{% endif %}
                   {% if not g.is_dml %}disabled{% endif %}
                   style="width:125px;font-size:12px;
                   {% if not g.is_dml %}background:#f0fdf4;border-color:#86efac;color:#15803d;
@@ -207,8 +217,11 @@
           </td>
 
           <!-- DML여부 -->
-          <td class="td" style="text-align:center;white-space:nowrap;" id="dml-cell-{{ g.group_id }}">
-            {% if g.is_dml %}
+          <td class="td" style="text-align:center;white-space:nowrap;" id="dml-cell-{{ g.group_id }}"
+              data-v="{{ 'DML' if g.is_dml else '비DML' }}">
+            {% if perms.dml_developer < 2 %}
+              {{ 'DML' if g.is_dml else '비DML' }}
+            {% elif g.is_dml %}
               <button class="btn btn-sm" id="dml-btn-{{ g.group_id }}"
                       onclick="toggleDml({{ g.group_id }}, false)"
                       title="SR이 필요없는 비DML로 표시">비DML로</button>
@@ -221,7 +234,7 @@
           </td>
 
           <!-- 상태 (비정상은 사유 입력여부 표시: '사유' 입력됨 / '사유 입력' 미입력) -->
-          <td class="td" style="text-align:center;" id="dstatus-{{ g.group_id }}">
+          <td class="td" style="text-align:center;" id="dstatus-{{ g.group_id }}" data-v="{{ g.ui_status }}">
             {% if g.ui_status == '정상' %}
               <span class="badge badge-ok">정상</span>
             {% elif g.ui_status == '비정상' %}
@@ -245,7 +258,7 @@
         </tr>
 
         <!-- 상세 서브행 -->
-        <tr id="detail-{{ g.group_id }}" style="display:none;">
+        <tr id="detail-{{ g.group_id }}" class="g-child" style="display:none;">
           <td colspan="14" style="padding:0;">
             <div id="detail-body-{{ g.group_id }}"
                 style="padding:8px 12px 10px 48px;"></div>
@@ -337,20 +350,25 @@
 {% block scripts %}
 <script>
 const CUR_YM  = '{{ period }}';
-const CUR_DEV = {{ current_user.id }};
-const ROLE    = '{{ current_user.role }}';
-const CAN_EDIT_DEV = (ROLE !== 'viewer');
+const CUR_DEV = {{ developer | tojson }};
+const CAN_EDIT_DEV = {{ 'true' if perms.dml_developer >= 2 else 'false' }};   // 개발자 화면 수정 권한
 
-/* ── 월 선택 → 페이지 이동 ── */
-document.getElementById('period-select').addEventListener('change', function () {
+/* ── 회차 · 개발자 선택 → 페이지 이동 ── */
+function _go(ym, dev) {
   const url = new URL(window.location.href);
-  url.searchParams.set('year_month',   this.value);
-  url.searchParams.set('developer_id', CUR_DEV);
+  url.searchParams.delete('developer_id');
+  url.searchParams.set('year_month', ym);
+  url.searchParams.set('developer',  dev);
   window.location.href = url.toString();
+}
+document.getElementById('period-select').addEventListener('change', function () { _go(this.value, CUR_DEV); });
+document.getElementById('dev-select').addEventListener('change', function () {
+  _go(document.getElementById('period-select').value, this.value);
 });
 
 /* ── Enter 키 → 적용 ── */
 document.addEventListener('DOMContentLoaded', () => {
+  if (!CAN_EDIT_DEV) return;
   document.querySelectorAll('.sr-input').forEach(inp => {
     inp.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -359,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-  applyDevFilter();
 });
 
 /* ── SR 적용 ── */
@@ -528,13 +545,12 @@ function _applyGroupState(groupId, g) {
 
   // DML여부 셀
   const dmlCell = document.getElementById('dml-cell-' + groupId);
-  if (dmlCell) dmlCell.innerHTML = _renderDmlCell(groupId, isDml);
+  if (dmlCell) { dmlCell.innerHTML = _renderDmlCell(groupId, isDml); dmlCell.dataset.v = isDml ? 'DML' : '비DML'; }
 
   // 상태 셀
   const stCell = document.getElementById('dstatus-' + groupId);
-  if (stCell) stCell.innerHTML = _renderStatusCell(ui, reason);
+  if (stCell) { stCell.innerHTML = _renderStatusCell(ui, reason); stCell.dataset.v = ui; }
 
-  applyDevFilter();
   _updateKpiFromDom();
 }
 
@@ -580,25 +596,6 @@ function _updateSrInfo(groupId, info) {
   }
 }
 
-
-/* ── 상태 필터 ── */
-function applyDevFilter() {
-  const val   = (document.getElementById('dev-status-filter') || {}).value || 'all';
-  const tbl   = document.getElementById('dev-group-table');
-  if (!tbl) return;
-  let visible = 0;
-  tbl.querySelectorAll('tbody tr[data-status]').forEach(tr => {
-    const show = val === 'all' || tr.dataset.status === val;
-    tr.style.display = show ? '' : 'none';
-    if (show) visible++;
-    // 상세 서브행도 부모 행과 연동
-    const gid = tr.id.replace('drow-', '');
-    const detailRow = document.getElementById('detail-' + gid);
-    if (detailRow && !show) detailRow.style.display = 'none';
-  });
-  const cnt = document.getElementById('dev-count');
-  if (cnt) cnt.textContent = `${visible}개 표시`;
-}
 
 /* ── 그룹 상세 토글 ── */
 const _logCache = {};

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}배치관리{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h2>배치관리</h2>
+  <div class="actions">
+    <span class="page-meta">
+      스케줄러 {% if scheduler_on %}<b style="color:var(--ok)">동작 중</b>{% else %}<b style="color:var(--bad)">꺼짐</b> (자동 실행 안 함 · 수동 실행만 가능){% endif %}
+      · 조회 {{ now }}
+    </span>
+    <span class="tb-sep"></span>
+    <a class="btn" href="/batch">새로고침</a>
+  </div>
+</div>
+
+{% set can_run = perms.batch >= 2 %}
+<div class="section">
+  <h3>배치잡 목록
+    <a class="btn btn-sm" style="margin-left:auto;" href="/batch/excel/jobs">엑셀</a>
+  </h3>
+  <div class="g-bar" id="jobBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+  </div>
+  <table class="g batch-jobs" data-grid data-grid-bar="#jobBar">
+    <thead>
+      <tr>
+        <th class="th" data-f>배치잡</th>
+        <th class="th" data-f>설명</th>
+        <th class="th" data-f style="width:130px">일정</th>
+        <th class="th" data-f style="width:160px">다음 실행</th>
+        <th class="th" data-f style="width:100px">최근 결과</th>
+        <th class="th" data-f style="width:200px">최근 실행</th>
+        {% if can_run %}<th class="th" style="width:190px">수동 실행</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr {% if j.last and j.last.status in ('failed', 'partial') %}data-status="{{ '비정상' if j.last.status == 'partial' else '미적용' }}"{% endif %}>
+        <td class="td" data-v="{{ j.name }}"><b>{{ j.name }}</b><div class="mono muted">{{ j.job_id }}</div></td>
+        <td class="td muted">{{ j.description }}</td>
+        <td class="td" data-v="{{ j.schedule_desc }}">{{ j.schedule_desc }}<div class="mono muted">{{ j.cron }}</div></td>
+        <td class="td mono">{{ j.next_run or '-' }}</td>
+        <td class="td" data-v="{{ j.last.status_label if j.last else '실행 이력 없음' }}">
+          {% if j.last %}
+            <span class="badge {{ 'badge-ok' if j.last.status == 'success' else 'badge-warn' if j.last.status == 'partial' else 'badge-bad' if j.last.status == 'failed' else 'badge-pending' }}">{{ j.last.status_label }}</span>
+          {% else %}<span class="muted">실행 이력 없음</span>{% endif %}
+        </td>
+        <td class="td" data-v="{{ j.last.started_at if j.last else '' }}">
+          {% if j.last %}
+            <span class="mono">{{ j.last.started_at }}</span>
+            <a href="#h-{{ j.last.id }}" class="link-detail" data-id="{{ j.last.id }}">상세</a>
+          {% endif %}
+        </td>
+        {% if can_run %}
+        <td class="td">
+          <div class="run-box">
+            {% if j.has_period %}<input type="month" class="run-ym" value="{{ j.default_ym }}" title="대상 회차">{% endif %}
+            <button class="btn btn-sm" onclick="runJob('{{ j.job_id }}', this)">실행</button>
+          </div>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>실행 이력 <span class="muted" style="font-weight:400">{% if total > limit %}최근 {{ limit }}건 표시 / 전체 {{ total }}건 (엑셀은 전체){% else %}{{ total }}건{% endif %}</span>
+    <a class="btn btn-sm" style="margin-left:auto;" href="/batch/excel/history">엑셀</a>
+  </h3>
+  <div class="g-bar" id="histBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+  </div>
+  <table class="g batch-hist" data-grid data-grid-bar="#histBar">
+    <thead>
+      <tr>
+        <th class="th" data-f style="width:160px">시작</th>
+        <th class="th" data-f style="width:180px">배치잡</th>
+        <th class="th" data-f style="width:130px">실행</th>
+        <th class="th" data-f style="width:100px">회차</th>
+        <th class="th" data-f style="width:100px">결과</th>
+        <th class="th" data-f style="width:80px">소요</th>
+        <th class="th" data-f>처리 결과 · 에러 원인</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for h in history %}
+      <tr id="h-{{ h.id }}" class="hist-row" data-id="{{ h.id }}"
+          {% if h.status == 'failed' %}data-status="미적용"{% elif h.status == 'partial' %}data-status="비정상"{% endif %}>
+        <td class="td mono">{{ h.started_at }}</td>
+        <td class="td">{{ h.job_name }}</td>
+        <td class="td">{{ h.trigger }}{% if h.triggered_by %} · {{ h.triggered_by }}{% endif %}</td>
+        <td class="td">{{ h.params | replace('회차 ', '') }}</td>
+        <td class="td" data-v="{{ h.status_label }}">
+          <span class="badge {{ 'badge-ok' if h.status == 'success' else 'badge-warn' if h.status == 'partial' else 'badge-bad' if h.status == 'failed' else 'badge-pending' }}">{{ h.status_label }}</span>
+        </td>
+        <td class="td">{{ h.duration }}</td>
+        <td class="td" data-v="{{ h.summary or h.error_message }}">
+          {% if h.summary %}<div>{{ h.summary }}</div>{% endif %}
+          {% if h.error_message %}
+            <div class="err-msg">{% if h.error_type %}<b>{{ h.error_type }}</b> · {% endif %}{{ h.error_message | truncate(300) }}</div>
+          {% endif %}
+          {% if h.status in ('failed', 'partial') %}<a href="#" class="link-detail" data-id="{{ h.id }}">에러 상세</a>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr data-no-filter><td class="td empty" colspan="7">실행 이력이 없습니다.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</div>
+
+<!-- 에러 상세 -->
+<div class="reason-modal-backdrop" id="detail-modal" style="display:none" onclick="if(event.target===this)closeDetail()">
+  <div class="reason-modal" style="width:min(960px, 94vw)">
+    <h3 id="detail-title">에러 상세</h3>
+    <div style="padding:12px 14px">
+      <dl class="detail-meta" id="detail-meta"></dl>
+      <div class="detail-label">에러 원인</div>
+      <pre class="detail-pre" id="detail-msg"></pre>
+      <div class="detail-label">트레이스백 (개발자 확인용)</div>
+      <pre class="detail-pre" id="detail-tb"></pre>
+      <div style="text-align:right;margin-top:10px"><button class="btn" onclick="closeDetail()">닫기</button></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+  .batch-jobs, .batch-hist { width: 100%; table-layout: fixed; }
+  .batch-jobs td, .batch-hist td { vertical-align: top; white-space: normal; word-break: break-all; }
+  .mono  { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .run-box { display: flex; gap: 4px; align-items: center; }
+  .run-box .run-ym { width: 120px; height: 26px; }
+  .err-msg { margin-top: 2px; color: var(--bad); white-space: pre-wrap; }
+  .link-detail { font-size: 12px; color: var(--accent); margin-left: 4px; }
+  .section > h3 .btn { font-weight: 400; }
+  .detail-meta { display: grid; grid-template-columns: 90px 1fr 90px 1fr; gap: 4px 8px; font-size: 12.5px; margin-bottom: 10px; }
+  .detail-meta dt { color: var(--muted); }
+  .detail-label { font-size: 12px; font-weight: 700; color: var(--ink-2); margin: 8px 0 4px; }
+  .detail-pre { max-height: 300px; overflow: auto; padding: 8px 10px; margin: 0;
+                background: var(--hdr); border: 1px solid var(--line); font-family: var(--mono);
+                font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runJob(jobId, btn) {
+  const ym = btn.parentElement.querySelector('.run-ym');
+  const label = btn.closest('tr').querySelector('b').textContent;
+  if (ym && !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym.value)) { showToast('대상 회차를 선택하세요 (예: 2026-10)', 'warn'); return; }
+  if (!confirm(`'${label}' 배치를 지금 실행할까요?` + (ym ? `\n대상 회차: ${ym.value}` : ''))) return;
+  btn.disabled = true;
+  try {
+    const q = ym && ym.value ? `?year_month=${encodeURIComponent(ym.value)}` : '';
+    const res = await fetch(`/batch/run/${jobId}${q}`, { method: 'POST' });
+    const data = await res.json();
+    showToast(data.message || (data.ok ? '실행을 시작했습니다.' : '실행하지 못했습니다.'), data.ok ? 'ok' : 'warn');
+    if (data.ok) setTimeout(() => location.reload(), 2000);
+  } catch (e) {
+    showToast('요청 실패: ' + e, 'warn');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; }
+
+document.addEventListener('click', async (ev) => {
+  const a = ev.target.closest('.link-detail');
+  if (!a) return;
+  ev.preventDefault();
+  const res = await fetch(`/batch/history/${a.dataset.id}`);
+  const data = await res.json();
+  if (!data.ok) { showToast(data.message || '조회 실패', 'warn'); return; }
+  const r = data.row;
+  document.getElementById('detail-title').textContent = `${r.job_name} · ${r.status_label}`;
+  const meta = [['시작', r.started_at], ['종료', r.finished_at || '-'], ['실행', r.trigger + (r.triggered_by ? ' · ' + r.triggered_by : '')],
+                ['소요', r.duration || '-'], ['회차', r.params || '-'], ['결과 요약', r.summary || '-']];
+  const dl = document.getElementById('detail-meta');
+  dl.replaceChildren(...meta.flatMap(([k, v]) => {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    return [dt, dd];
+  }));
+  document.getElementById('detail-msg').textContent =
+    (r.error_type ? `[${r.error_type}] ` : '') + (r.error_message || '에러 없음');
+  document.getElementById('detail-tb').textContent = data.error_detail || '(트레이스백 없음 — 부분 실패는 시스템별 원인만 기록)';
+  document.getElementById('detail-modal').style.display = 'flex';
+});
+</script>
+{% endblock %}

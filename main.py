@@ -1,101 +1,72 @@
+"""
+월간모니터링 통합대시보드 — 앱 진입점
+
+시작 순서 (lifespan):
+  1) 로그 설정            core/logging_config.py
+  2) DB 구조 자동 적용     core/migrate.py   (AUTO_MIGRATE=true)
+  3) 배치 스케줄러 시작    batch/scheduler.py (SCHEDULER_ENABLED=true)
+
+실행: python main.py   또는   uvicorn main:app --host 0.0.0.0 --port 8000
+"""
 import logging
-import time
+import re
+from contextlib import asynccontextmanager
 from pathlib import Path
+
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import OperationalError
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
-
-from core.deps import RedirectToLogin, ForbiddenPage
 from core.logging_config import setup_logging
 
-# ───────────────────────────────────────────
-# 로깅 설정 (logs/ 날짜별 — 앱/접속/에러)
-# ───────────────────────────────────────────
-access_logger = setup_logging()
+setup_logging()
 logger = logging.getLogger(__name__)
-from routers import (
-    auth,
-    dashboard,
-    program_change,
-    dept_transfer,
-    dml_manager,      # DML 담당자 뷰
-    dml_developer,    # DML 개발자 뷰
-    ddl,              # DDL (담당자 단일 뷰)
-    security_log,
-    admin_users,
+
+from core.deps import ForbiddenPage, RedirectToLogin  # noqa: E402
+from core.permissions import (ApiForbidden, PERM_DENIED_MSG,  # noqa: E402
+                              first_allowed_url, request_perms)
+from core.middleware import request_log_middleware    # noqa: E402
+from core.web import db_error_response, render        # noqa: E402
+from routers import (                                 # noqa: E402
+    account, auth, batch, dashboard, ddl, depart, dml_developer, dml_manager, program, role,
 )
 
-# ───────────────────────────────────────────
-# 기본 설정
-# ───────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="모니터링 시스템")
 
-# ───────────────────────────────────────────
-# SessionMiddleware 등록
-# ───────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("앱 시작 (APP_ENV=%s)", settings.APP_ENV)
+    if settings.AUTO_MIGRATE:
+        from core.migrate import upgrade_to_head
+        upgrade_to_head()
+    from batch import scheduler
+    try:
+        scheduler.start()
+    except Exception:
+        logger.exception("배치 스케줄러 시작 실패 — 화면은 계속 동작합니다")
+    yield
+    scheduler.shutdown()
+    logger.info("앱 종료")
+
+
+app = FastAPI(title="모니터링 시스템", lifespan=lifespan)
+
+# 미들웨어: 나중에 등록한 것이 바깥쪽 → 요청 로그가 세션을 읽을 수 있도록 세션을 먼저 등록
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.SECRET_KEY,   # 쿠키 서명 키
+    secret_key=settings.SECRET_KEY,
     session_cookie="dml_session",
-    max_age=60 * 60 * 8,                   # 8시간
+    max_age=settings.SESSION_MAX_AGE,
     same_site="lax",
-    https_only=False,                      # HTTPS 운영 시 True
+    https_only=settings.HTTPS_ONLY,
 )
+app.middleware("http")(request_log_middleware)
 
-
-# ───────────────────────────────────────────
-# 접속/에러 로그 미들웨어
-#  - 모든 요청을 access 로그에 기록 (사용자 IP·메서드·경로·상태·소요시간·사용자)
-#  - 처리 중 예외는 error 로그에 트레이스백 기록 후 재발생
-#  ※ SessionMiddleware 이후 등록 → 본 미들웨어가 바깥쪽 → call_next 후 세션 조회 가능
-# ───────────────────────────────────────────
-def _client_ip(request: Request) -> str:
-    """프록시 뒤에서도 실제 클라이언트 IP를 우선 사용."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    real = request.headers.get("x-real-ip")
-    if real:
-        return real.strip()
-    return request.client.host if request.client else "-"
-
-
-@app.middleware("http")
-async def access_log_middleware(request: Request, call_next):
-    start = time.perf_counter()
-    ip    = _client_ip(request)
-    try:
-        response = await call_next(request)
-    except Exception:
-        elapsed = (time.perf_counter() - start) * 1000
-        logger.exception(
-            "처리 중 예외 — %s %s ip=%s (%.1fms)",
-            request.method, request.url.path, ip, elapsed,
-        )
-        access_logger.info(
-            '%s "%s %s" 500 %.1fms user=-',
-            ip, request.method, request.url.path, elapsed,
-        )
-        raise
-
-    elapsed = (time.perf_counter() - start) * 1000
-    user = "-"
-    try:
-        user = (request.session.get("name")
-                or request.session.get("user_id") or "-")
-    except Exception:
-        pass
-    access_logger.info(
-        '%s "%s %s" %s %.1fms user=%s',
-        ip, request.method, request.url.path, response.status_code, elapsed, user,
-    )
-    return response
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 @app.exception_handler(RedirectToLogin)
@@ -105,49 +76,55 @@ async def redirect_to_login_handler(request, exc):
 
 @app.exception_handler(ForbiddenPage)
 async def forbidden_page_handler(request: Request, exc: ForbiddenPage):
-    return templates.TemplateResponse(
-        "error_forbidden.html",
-        {
-            "request": request,
-            "active": "",
-            "current_user": {
-                "id":   request.session.get("user_id", -1),
-                "name": request.session.get("name", ""),
-                "role": request.session.get("role", ""),
-            },
-            "message": exc.message,
-        },
-        status_code=403,
-    )
+    return render(request, "error_forbidden.html", {"message": exc.message}, status_code=403)
 
-# 정적 파일 / 템플릿 (절대경로로 안전하게)
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
-# ───────────────────────────────────────────
-# 라우터 등록
-# ───────────────────────────────────────────
-app.include_router(auth.router)
-app.include_router(dashboard.router)
-app.include_router(program_change.router)
-app.include_router(dept_transfer.router)
-app.include_router(dml_manager.router)
-app.include_router(dml_developer.router)
-app.include_router(ddl.router)
-app.include_router(security_log.router)
-app.include_router(admin_users.router)
+@app.exception_handler(ApiForbidden)
+async def api_forbidden_handler(request: Request, exc: ApiForbidden):
+    return JSONResponse({"ok": False, "message": PERM_DENIED_MSG}, status_code=403)
 
-# ───────────────────────────────────────────
-# 루트 → 대시보드
-# ───────────────────────────────────────────
+
+@app.exception_handler(OperationalError)
+async def db_error_handler(request: Request, exc: OperationalError):
+    """DB 연결 실패 — 화면은 안내 페이지, API 는 503 JSON. 라우터마다 try/except 하지 않는다."""
+    logger.error("DB 연결 실패 %s %s: %s", request.method, request.url.path, str(exc.orig).strip())
+    return db_error_response(request)
+
+
+for r in (auth, dashboard, program, depart, dml_manager, dml_developer, ddl, account, role, batch):
+    app.include_router(r.router)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return RedirectResponse(url="/dashboard", status_code=302)
+    """로그인 후 첫 화면 — 접속 권한이 있는 첫 페이지 (보통 대시보드)."""
+    if not request.session.get("user_id"):
+        return RedirectResponse(url="/login", status_code=302)
+    url = first_allowed_url(request_perms(request))
+    if not url:
+        raise ForbiddenPage("접속할 수 있는 페이지가 없습니다. 관리자에게 역할 권한을 요청하세요.")
+    return RedirectResponse(url=url, status_code=302)
 
 
-# ───────────────────────────────────────────
-# 실행
-# ───────────────────────────────────────────
+# 이름 변경 전 주소(즐겨찾기) → 새 주소로 이동
+_OLD_PATHS = [(re.compile(r"^/program-change"), "/program"),
+              (re.compile(r"^/dept-transfer"), "/depart"),
+              (re.compile(r"^/admin/users"), "/account")]
+
+
+@app.get("/{old_path:path}", include_in_schema=False)
+async def legacy_redirect(old_path: str, request: Request):
+    path = "/" + old_path
+    for pat, new in _OLD_PATHS:
+        if pat.match(path):
+            url = pat.sub(new, path, count=1)
+            if request.url.query:
+                url += "?" + request.url.query
+            return RedirectResponse(url, status_code=301)
+    return HTMLResponse("페이지를 찾을 수 없습니다.", status_code=404)
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host=settings.APP_HOST, port=settings.APP_PORT,
+                reload=settings.APP_ENV == "dev")

@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}부서이동자 월간 모니터링{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h2>부서이동자 <span class="muted-tag">월간</span></h2>
+  <div class="actions">
+    {% if last_batch_at %}<span class="page-meta">마지막 월간 배치 {{ last_batch_at }}</span><span class="tb-sep"></span>{% endif %}
+    <label for="period-select">회차</label>
+    <input type="month" id="period-select" value="{{ period }}">
+    <button id="btn-excel-monthly" class="btn"
+            onclick="downloadMonthlyExcel()">
+      {% if system_code == '공통' %}부서이동자{% else %}{{ system_code }}{% endif %} 엑셀
+    </button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="db-error-banner">DB 연결 실패 — 서버에 접속할 수 없습니다.</div>
+{% endif %}
+
+<!-- 전체 시스템 KPI -->
+<div class="card-grid">
+  <div class="card">
+    <div class="card-title">부서이동자</div>
+    <div class="card-num">{{ kpi['공통']['total'] }}</div>
+    <div class="card-sub">리스트 건수</div>
+  </div>
+  <div class="card {% if kpi['PMS']['pending'] > 0 %}warn{% endif %}" id="kpi-card-PMS">
+    <div class="card-title">PMS</div>
+    <div class="card-num">{{ kpi['PMS']['total'] }}</div>
+    <div class="card-sub">미적용 <span id="kpi-pending-PMS">{{ kpi['PMS']['pending'] }}</span>건</div>
+  </div>
+  <div class="card {% if kpi['HR']['pending'] > 0 %}warn{% endif %}" id="kpi-card-HR">
+    <div class="card-title">HR</div>
+    <div class="card-num">{{ kpi['HR']['total'] }}</div>
+    <div class="card-sub">미적용 <span id="kpi-pending-HR">{{ kpi['HR']['pending'] }}</span>건</div>
+  </div>
+  <div class="card {% if kpi['EPRO']['pending'] > 0 %}warn{% endif %}" id="kpi-card-EPRO">
+    <div class="card-title">전자조달</div>
+    <div class="card-num">{{ kpi['EPRO']['total'] }}</div>
+    <div class="card-sub">미적용 <span id="kpi-pending-EPRO">{{ kpi['EPRO']['pending'] }}</span>건</div>
+  </div>
+  <div class="card {% if kpi['progress'] == 100 %}ok{% elif kpi['progress'] > 0 %}warn{% endif %}" id="kpi-card-progress">
+    <div class="card-title">SR 적용률</div>
+    <div class="card-num"><span id="kpi-progress">{{ kpi['progress'] }}</span>%</div>
+    <div class="card-sub">HR + PMS + 전자조달</div>
+  </div>
+</div>
+
+<!-- 시스템 탭 -->
+<div class="tabs" id="sysTabs">
+  {% for s in [('공통','부서이동자 리스트'),('PMS','PMS'),('HR','HR'),('EPRO','전자조달')] %}
+  <button class="tab {% if s[0] == system_code %}active{% endif %}"
+          onclick="changeSystem('{{ s[0] }}')">{{ s[1] }}
+    <span class="tab-cnt">{{ kpi[s[0]]['total'] }}{% if s[0] != '공통' %} · <span class="tab-pend {% if kpi[s[0]]['pending'] %}on{% endif %}" id="tab-pending-{{ s[0] }}" title="SR 미처리">미처리 {{ kpi[s[0]]['pending'] }}</span>{% endif %}</span>
+  </button>
+  {% endfor %}
+</div>
+
+<!-- 레코드 테이블 -->
+<div class="section">
+  <h3>
+    {% if system_code == '공통' %}부서이동자 리스트
+    {% elif system_code == 'PMS' %}PMS 권한 현황
+    {% elif system_code == 'HR' %}HR(ERP) 권한 현황
+    {% else %}전자조달 권한 현황
+    {% endif %}
+  </h3>
+
+  {% if system_code != '공통' %}
+  <div class="tab-sum">
+    <span>전체 <b>{{ kpi[system_code]['total'] }}</b>건</span>
+    <span class="sep"></span>
+    <span>SR 처리 <b id="sum-done">{{ kpi[system_code]['total'] - kpi[system_code]['pending'] }}</b>건</span>
+    <span class="sep"></span>
+    <span class="{% if kpi[system_code]['pending'] %}pend{% endif %}" id="sum-pend-wrap">SR 미처리 <b id="sum-pend">{{ kpi[system_code]['pending'] }}</b>건</span>
+  </div>
+  {% endif %}
+  <div class="g-bar" id="mBar">
+    <span class="g-count"></span>
+    <button type="button" class="btn btn-sm g-clear" hidden>필터 모두 해제</button>
+    <span class="g-note">칼럼 머리글 ▾ : 필터 · 머리글 글자 클릭 : 정렬</span>
+  </div>
+
+  {% if not records %}
+    <div class="empty">
+      데이터가 없습니다. (월간 수집은 '배치관리' 화면에서 실행)
+    </div>
+  {% else %}
+  <div style="overflow-x:auto;">
+    <table id="m-table" class="g" data-grid data-grid-bar="#mBar">
+      <thead>
+        <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+          <th class="th" data-f>부서변경일</th>
+          <th class="th" data-f>사번</th>
+          <th class="th" data-f>이름</th>
+          {% if system_code == '공통' %}<th class="th" data-f>이전부서코드</th>{% endif %}
+          <th class="th" data-f>이전부서명</th>
+          {% if system_code == '공통' %}<th class="th" data-f>현재부서코드</th>{% endif %}
+          <th class="th" data-f>현재부서명</th>
+          {% if system_code != '공통' %}
+          <th class="th" data-f>권한명</th>
+          <th class="th" data-f>권한등록일</th>
+          <th class="th" data-f style="width:120px;">권한회수일</th>
+          <th class="th" data-f style="width:260px;">SR번호</th>
+          <th class="th" data-f>SR 처리</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr id="mr-{{ r.id }}" {% if system_code != '공통' and not (r.sr_no and r.sr_title) %}data-action="none"{% endif %}
+            style="border-bottom:1px solid #eaecef;
+              {% if system_code != '공통' and not (r.sr_no and r.sr_title) %}background:#fffbea;{% endif %}">
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+          <td class="td">{{ r.empno }}</td>
+          <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+          {% if system_code == '공통' %}
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.prev_dept_code }}</td>
+          {% endif %}
+          <td class="td" style="color:#6a737d;">{{ r.prev_dept_name }}</td>
+          {% if system_code == '공통' %}
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
+          {% endif %}
+          <td class="td">{{ r.dept_name }}</td>
+          {% if system_code != '공통' %}
+          <td class="td" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+              title="{{ r.role_name }}">{{ r.role_name }}</td>
+          <td class="td" style="font-size:12px;">{{ r.reg_date }}</td>
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.revoke_date or '—' }}</td>
+          <td class="td" style="white-space:nowrap;">
+            <input type="text" id="msr-{{ r.id }}" value="{{ r.sr_no }}"
+                   {% if perms.depart_monthly >= 2 %}placeholder="SR번호"{% else %}readonly{% endif %}
+                   style="width:130px;font-size:12px;
+                     {% if r.sr_no and r.sr_title %}background:#f0fdf4;border-color:#86efac;
+                     {% elif r.sr_no and not r.sr_title %}background:#fef2f2;border-color:#fca5a5;
+                     {% endif %}">
+            {% if perms.depart_monthly >= 2 %}<button class="btn btn-sm" onclick="saveMonthSr({{ r.id }})">저장</button>{% endif %}
+            <span id="msr-status-{{ r.id }}"
+                  style="font-size:11px;font-weight:500;margin-left:3px;
+                    {% if r.sr_no and r.sr_title %}color:#16a34a;
+                    {% elif r.sr_no and not r.sr_title %}color:#dc2626;
+                    {% endif %}">
+              {% if r.sr_no and r.sr_title %}매핑됨
+              {% elif r.sr_no and not r.sr_title %}미매핑
+              {% endif %}
+            </span>
+          </td>
+          <td class="td" id="msr-done-{{ r.id }}">{% if r.sr_no and r.sr_title %}처리{% else %}미처리{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+  #m-table td { white-space: nowrap; }
+  #m-table input[type="text"] { width: 130px !important; }
+  .section > div:has(> #m-table) { margin-left: 0; margin-right: 0; }
+  .tab .tab-cnt { margin-left: 4px; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+  .tab .tab-pend.on { color: var(--bad); font-weight: 700; }
+  .tab-sum { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 6px 10px;
+             background: var(--hdr); border: 1px solid var(--line-soft); font-size: 12.5px; color: var(--ink-2); }
+  .tab-sum b { color: var(--ink); font-size: 14px; }
+  .tab-sum .sep { width: 1px; height: 14px; background: var(--line); }
+  .tab-sum .pend b { color: var(--bad); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CUR_YM = '{{ period }}';
+const CUR_SC = '{{ system_code }}';
+const CAN_EDIT_MONTHLY = {{ 'true' if perms.depart_monthly >= 2 else 'false' }};   // 수정 권한
+
+async function downloadMonthlyExcel() {
+  const ym  = document.getElementById('period-select').value || CUR_YM;
+  const url = `/depart/monthly/excel/${CUR_SC}?year_month=${ym}`;
+  const btn = document.getElementById('btn-excel-monthly');
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '다운로드 중…';
+  try {
+    const res = await fetch(url);
+    const ct  = res.headers.get('Content-Type') || '';
+    if (res.ok && (ct.includes('spreadsheetml') || ct.includes('octet-stream'))) {
+      const blob = await res.blob();
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = `부서이동자_${ym}_${CUR_SC}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.message || '엑셀 다운로드 실패', 'bad');
+    }
+  } catch (e) {
+    showToast('엑셀 다운로드 오류: ' + e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+  }
+}
+
+document.getElementById('period-select').addEventListener('change', function () {
+  const url = new URL(window.location.href);
+  url.searchParams.set('year_month',  this.value);
+  url.searchParams.set('system_code', CUR_SC);
+  window.location.href = url.toString();
+});
+
+function changeSystem(code) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('system_code', code);
+  url.searchParams.set('year_month',  CUR_YM);
+  window.location.href = url.toString();
+}
+
+async function saveMonthSr(id) {
+  if (!CAN_EDIT_MONTHLY) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const inp = document.getElementById('msr-' + id);
+  const sr  = (inp.value || '').trim();
+  const r = await postJSON('/depart/monthly/sr', { record_id: id, sr_no: sr });
+  if (r.ok) {
+    const found = r.sr_found;
+    inp.style.background  = found ? '#f0fdf4'  : '#fef2f2';
+    inp.style.borderColor = found ? '#86efac'  : '#fca5a5';
+    const status = document.getElementById('msr-status-' + id);
+    if (status) {
+      status.textContent = found ? '매핑됨' : '미매핑';
+      status.style.color = found ? '#16a34a' : '#dc2626';
+    }
+    // 행 배경: 매핑됨 → 흰색(기본) / 미입력·미매핑 → 주황
+    const row = document.getElementById('mr-' + id);
+    if (row) { if (found) row.removeAttribute('data-action'); else row.dataset.action = 'none'; }
+    const done = document.getElementById('msr-done-' + id);
+    if (done) done.textContent = found ? '처리' : '미처리';
+    // KPI 즉시 갱신 (새로고침 불필요)
+    if (r.kpi) updateKpi(r.kpi);
+    const msg = found
+      ? `SR ${sr} 저장 완료 — ${r.record.sr_title || ''}`
+      : `SR ${sr} 저장됨 (SR DB에 없음)`;
+    showToast(msg, found ? 'ok' : 'warn');
+  } else {
+    showToast(r.message || '저장 실패', 'bad');
+  }
+}
+
+/* ── KPI 카드 즉시 갱신 ── */
+function updateKpi(kpi) {
+  ['HR', 'PMS', 'EPRO'].forEach(sc => {
+    const k = kpi[sc];
+    if (!k) return;
+    const pend = document.getElementById('kpi-pending-' + sc);
+    if (pend) pend.textContent = k.pending;
+    const tabPend = document.getElementById('tab-pending-' + sc);
+    if (tabPend) { tabPend.textContent = '미처리 ' + k.pending; tabPend.classList.toggle('on', k.pending > 0); }
+    if (sc === CUR_SC) {
+      const sp = document.getElementById('sum-pend'), sd = document.getElementById('sum-done');
+      if (sp) sp.textContent = k.pending;
+      if (sd) sd.textContent = k.total - k.pending;
+      const w = document.getElementById('sum-pend-wrap');
+      if (w) w.classList.toggle('pend', k.pending > 0);
+    }
+    const card = document.getElementById('kpi-card-' + sc);
+    if (card) card.classList.toggle('warn', k.pending > 0);
+  });
+  const prog = document.getElementById('kpi-progress');
+  if (prog) prog.textContent = kpi.progress;
+  const progCard = document.getElementById('kpi-card-progress');
+  if (progCard) {
+    progCard.classList.toggle('ok',   kpi.progress === 100);
+    progCard.classList.toggle('warn', kpi.progress > 0 && kpi.progress < 100);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    /* SR 입력란 Enter 키 → 저장 */
+  document.querySelectorAll('input[id^="msr-"]').forEach(inp => {
+    // id 형식: msr-{id} / msr-status-{id} 는 input 이 아니므로 제외됨
+    const m = inp.id.match(/^msr-(\d+)$/);
+    if (!m) return;
+    const recordId = m[1];
+
+    inp.addEventListener('keydown', e => {
+      // 한글 IME 조합 중 Enter 무시 (중복 저장 방지)
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault();
+        saveMonthSr(parseInt(recordId, 10));
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

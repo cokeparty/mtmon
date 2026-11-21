@@ -35,7 +35,7 @@ class DmlGroup(Base):
 
     id           = Column(BigInteger, primary_key=True)
     period_id    = Column(BigInteger,
-                          ForeignKey("program_change.monitoring_period.id"),
+                          ForeignKey("common.monitoring_period.id"),
                           nullable=False)
     system_code  = Column(String(10),  nullable=False)
     base_time    = Column(TIMESTAMP,   nullable=False)
@@ -70,7 +70,7 @@ class DmlLog(Base):
 
     id            = Column(BigInteger, primary_key=True)
     period_id     = Column(BigInteger,
-                           ForeignKey("program_change.monitoring_period.id"),
+                           ForeignKey("common.monitoring_period.id"),
                            nullable=False)
     system_code   = Column(String(10),  nullable=False)
     request_time  = Column(TIMESTAMP,   nullable=False)
