@@ -1,0 +1,857 @@
+{% extends "base.html" %}
+{% block title %}DML 모니터링 (개발자){% endblock %}
+
+{% block content %}
+<!-- ══════════════════════════════════════════════
+     페이지 헤더
+══════════════════════════════════════════════ -->
+<div class="page-head">
+  <h2>
+    데이터변경 (DML)
+    <span class="muted-tag">개발자 화면 · {{ current_user.name }}</span>
+  </h2>
+  <div class="actions">
+    <a class="btn" href="/dml/manager?year_month={{ period }}">담당자 화면</a>
+    <span class="tb-sep"></span>
+    <label for="period-select">회차</label>
+    <input type="month" id="period-select" value="{{ period }}">
+  </div>
+</div>
+
+{% if db_error %}
+<div class="db-error-banner">
+  DB 연결 실패 — 서버(203.238.192.134:5432)에 접속할 수 없습니다. 네트워크 또는 DB 상태를 확인하세요.
+</div>
+{% endif %}
+
+<!-- ══════════════════════════════════════════════
+     KPI 카드
+══════════════════════════════════════════════ -->
+<div class="card-grid">
+  <div class="card">
+    <div class="card-title">내 그룹</div>
+    <div class="card-num">{{ summary.total | default(0) }}</div>
+    <div class="card-sub">{{ period }}</div>
+  </div>
+  <div class="card ok">
+    <div class="card-title">적용 완료</div>
+    <div class="card-num" id="kpi-applied">{{ summary.applied | default(0) }}</div>
+  </div>
+  <div class="card caution">
+    <div class="card-title">사유미입력</div>
+    <div class="card-num" id="kpi-no-reason">{{ summary.no_reason | default(0) }}</div>
+    <div class="card-sub">비정상 + 소명 없음</div>
+  </div>
+  <div class="card warn">
+    <div class="card-title">미적용</div>
+    <div class="card-num" id="kpi-pending">{{ summary.pending | default(0) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">진행률</div>
+    <div class="card-num" id="kpi-pct">{{ summary.progress_pct | default(0) }}%</div>
+    <div class="progress-wrap" style="margin-top:6px;">
+      <div class="progress-bar" id="kpi-bar"
+           style="width:{{ summary.progress_pct | default(0) }}%;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     내 그룹 — SR 번호 입력
+══════════════════════════════════════════════ -->
+<div class="section">
+  <h3>내 그룹 — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 그룹 내 모든 행에 적용 · 노란 칸 = 입력 필요</span></h3>
+  <div class="dml-legend">
+    <span><span class="badge badge-bad" style="font-size:11px;">미적용</span> SR 미입력 또는 번호 없음</span>
+    <span><span class="badge badge-warn" style="font-size:11px;">비정상</span> SR 작업승인일 전 실행·긴급 기한 초과</span>
+    <span><span class="badge badge-ok" style="font-size:11px;">정상</span> 승인일 이후 실행 (긴급: 실행 후 5일 이내 SR종료)</span>
+  </div>
+
+  {% if not groups %}
+  <div class="empty-state">
+  <div class="empty-title">담당하신 DML 그룹이 없습니다</div>
+  <div class="empty-desc">
+    <strong>{{ period }}</strong> 회차에 <strong>{{ current_user.name }}</strong>님께
+    배정된 DML 그룹이 없습니다.<br>
+    회차를 변경하거나, <strong>담당자 화면</strong>에서 그룹 배정 상태를 확인해 주세요.
+  </div>
+  <div style="margin-top:18px;">
+    <a class="btn btn-primary" href="/dml/manager?year_month={{ period }}">
+      담당자 화면으로 이동
+    </a>
+  </div>
+</div>
+  {% else %}
+
+  <!-- 빠른 필터 -->
+  <div class="filter-bar" style="margin-bottom:10px;">
+    <select id="dev-status-filter" onchange="applyDevFilter()">
+      <option value="all">전체</option>
+      <option value="미적용">미적용만</option>
+      <option value="비정상">비정상만</option>
+      <option value="정상">정상만</option>
+    </select>
+    <span id="dev-count" style="font-size:12px;color:#6a737d;"></span>
+  </div>
+
+  <!-- ── 일괄 SR 적용 패널 ── -->
+  <div id="bulk-panel" class="bulkbar">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:12.5px;font-weight:700;white-space:nowrap;">일괄 SR 적용</span>
+      <label style="font-size:13px;color:#444;white-space:nowrap;">순번</label>
+      <input type="number" id="bulk-start" min="1" placeholder="시작"
+             style="width:60px;padding:3px 6px;height:26px;font-size:13px;border:1px solid #d0d7de;border-radius:4px;box-sizing:border-box;"
+             oninput="highlightRange()">
+      <span style="font-size:13px;color:#444;">~</span>
+      <input type="number" id="bulk-end" min="1" placeholder="종료"
+             style="width:60px;padding:3px 6px;height:26px;font-size:13px;border:1px solid #d0d7de;border-radius:4px;box-sizing:border-box;"
+             oninput="highlightRange()">
+      <label style="font-size:13px;color:#444;white-space:nowrap;margin-left:4px;">SR번호</label>
+      <input type="text" id="bulk-sr" placeholder="A01-YYYYMMDD-NNN"
+             style="width:160px;padding:3px 6px;height:26px;font-size:13px;border:1px solid #d0d7de;border-radius:4px;box-sizing:border-box;">
+      <label style="font-size:13px;color:#444;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;margin-left:4px;">
+        <input type="checkbox" id="bulk-skip-existing" checked style="cursor:pointer;">
+        기존 SR 보호
+      </label>
+      <button class="btn btn-primary btn-sm" onclick="showBulkPreview()"
+              style="height:26px;padding:0 10px;font-size:13px;line-height:26px;white-space:nowrap;">미리보기 → 적용</button>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table id="dev-group-table" class="g">
+      <thead>
+        <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+          <th class="th" style="width:40px;text-align:center;">#</th>
+          <th class="th">시스템</th>
+          <th class="th" style="width:80px;">접속계정</th>
+          <th class="th" style="width:110px;">대상 테이블</th>
+          <th class="th" style="text-align:right;width:60px;">건수</th>
+          <th class="th" style="width:160px;">기준시각</th>
+          <th class="th" style="width:140px;">SR 번호</th>
+          <th class="th" style="max-width:180px;">SR제목</th>
+          <th class="th" style="width:90px;">작업구분</th>
+          <th class="th" style="width:90px;">작업승인일</th>
+          <th class="th" style="width:90px;">SR종료일</th>
+          <th class="th" style="text-align:center;width:90px;">DML여부</th>
+          <th class="th" style="text-align:center;width:90px;">상태</th>
+          <th class="th" style="text-align:center;width:60px;">상세</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in groups %}
+        <tr id="drow-{{ g.group_id }}"
+            data-status="{{ g.ui_status }}"
+            data-reason="{{ g.reason }}"
+            style="border-bottom:1px solid #eaecef;
+                  {% if g.ui_status == '미적용' %}background:#fff5f5;{% endif %}">
+
+          <!-- 순번 -->
+          <td class="td" style="text-align:center;color:#6a737d;">{{ loop.index }}</td>
+
+          <!-- 시스템 -->
+          <td class="td"><span class="badge badge-pending">{{ g.system }}</span></td>
+
+          <!-- 접속계정 -->
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ g.conn_account }}</td>
+
+          <!-- 대상 테이블 -->
+          <td class="td" style="font-weight:500;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+              title="{{ g.target_table }}">{{ g.target_table }}</td>
+
+          <!-- 건수 -->
+          <td class="td" style="text-align:right;">{{ g.row_count }}</td>
+
+          <!-- 기준시각 -->
+          <td class="td td-date" style="font-size:12px;">{{ g.base_time }}</td>
+
+          <!-- SR번호 입력 (비DML은 입력창 유지 + 'DML이 아님' 표시 + 비활성) -->
+          <td class="td">
+            <input type="text"
+                  id="sr-{{ g.group_id }}"
+                  class="sr-input {% if not g.is_dml %}is-filled{% elif g.sr_no and g.sr_no|trim %}is-filled{% else %}is-empty{% endif %}"
+                  data-group-id="{{ g.group_id }}"
+                  data-sr-no="{{ g.sr_no or '' }}"
+                  value="{% if not g.is_dml %}DML이 아님{% else %}{{ g.sr_no or '' }}{% endif %}"
+                  placeholder="A01-YYYYMMDD-NNN"
+                  {% if not g.is_dml %}disabled{% endif %}
+                  style="width:125px;font-size:12px;
+                  {% if not g.is_dml %}background:#f0fdf4;border-color:#86efac;color:#15803d;
+                  {% elif g.ui_status == '정상' %}background:#f0fdf4;border-color:#86efac;
+                  {% elif g.ui_status == '비정상' %}background:#fffbea;border-color:#fcd34d;
+                  {% else %}background:#fef2f2;border-color:#fca5a5;
+                  {% endif %}">
+          </td>
+
+          <!-- SR제목 (비DML은 'DML이 아님') -->
+          <td class="td" id="dsr-title-{{ g.group_id }}"
+              style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;"
+              title="{% if not g.is_dml %}DML이 아님{% else %}{{ g.sr_title }}{% endif %}">
+            {% if not g.is_dml %}DML이 아님{% elif g.sr_title %}{{ g.sr_title }}{% else %}<span class="td-empty">—</span>{% endif %}
+          </td>
+
+          <!-- 작업구분 -->
+          <td class="td" id="dsr-type-{{ g.group_id }}" style="font-size:12px;white-space:nowrap;">
+            {% if not g.is_dml %}DML이 아님{% elif g.work_type %}{{ g.work_type }}{% else %}<span class="td-empty">—</span>{% endif %}
+          </td>
+
+          <!-- 작업승인일 -->
+          <td class="td td-date" id="dsr-appr-{{ g.group_id }}" style="font-size:12px;">
+            {% if not g.is_dml %}DML이 아님{% elif g.appr_date %}{{ g.appr_date }}{% else %}<span class="td-empty">—</span>{% endif %}
+          </td>
+
+          <!-- SR종료일 -->
+          <td class="td td-date" id="dsr-close-{{ g.group_id }}" style="font-size:12px;">
+            {% if not g.is_dml %}DML이 아님{% elif g.close_date %}{{ g.close_date }}{% else %}<span class="td-empty">—</span>{% endif %}
+          </td>
+
+          <!-- DML여부 -->
+          <td class="td" style="text-align:center;white-space:nowrap;" id="dml-cell-{{ g.group_id }}">
+            {% if g.is_dml %}
+              <button class="btn btn-sm" id="dml-btn-{{ g.group_id }}"
+                      onclick="toggleDml({{ g.group_id }}, false)"
+                      title="SR이 필요없는 비DML로 표시">비DML로</button>
+            {% else %}
+              <button class="btn btn-sm" id="dml-btn-{{ g.group_id }}"
+                      onclick="toggleDml({{ g.group_id }}, true)"
+                      style="background:#e8f6ee;color:#1e7e44;border-color:#27ae60;"
+                      title="DML로 되돌리기">DML로</button>
+            {% endif %}
+          </td>
+
+          <!-- 상태 (비정상은 사유 입력여부 표시: '사유' 입력됨 / '사유 입력' 미입력) -->
+          <td class="td" style="text-align:center;" id="dstatus-{{ g.group_id }}">
+            {% if g.ui_status == '정상' %}
+              <span class="badge badge-ok">정상</span>
+            {% elif g.ui_status == '비정상' %}
+              <span class="badge badge-warn">비정상</span>
+              {% if g.reason %}
+                <span class="reason-flag has" title="사유 입력됨 — 클릭하여 수정">사유</span>
+              {% else %}
+                <span class="reason-flag none" title="사유 미입력 — 클릭하여 입력">사유 입력</span>
+              {% endif %}
+            {% else %}
+              <span class="badge badge-bad">미적용</span>
+            {% endif %}
+          </td>
+
+          <!-- 상세 -->
+          <td class="td" style="text-align:center;">
+            <button class="btn-toggle"
+                    id="expand-{{ g.group_id }}"
+                    onclick="toggleLogs({{ g.group_id }})">쿼리</button>
+          </td>
+        </tr>
+
+        <!-- 상세 서브행 -->
+        <tr id="detail-{{ g.group_id }}" style="display:none;">
+          <td colspan="14" style="padding:0;">
+            <div id="detail-body-{{ g.group_id }}"
+                style="padding:8px 12px 10px 48px;"></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+  <div class="foot-note">총 {{ groups | length }}개 그룹</div>
+  {% endif %}
+</div>
+
+<!-- ══════════════════════════════════════════════
+     일괄 SR 적용 프리뷰 모달
+══════════════════════════════════════════════ -->
+<div id="bulk-preview-modal" class="reason-modal-backdrop" style="display:none;">
+  <div class="reason-modal" style="width:580px;max-width:96vw;">
+    <h3>일괄 SR 적용 미리보기</h3>
+    <div id="bulk-preview-meta" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+    <div style="overflow:auto;max-height:340px;border:1px solid var(--line);">
+      <table class="g">
+        <thead>
+          <tr>
+            <th style="text-align:center;width:40px;">#</th>
+            <th>대상 테이블</th>
+            <th>현재 SR</th>
+            <th style="text-align:center;width:110px;">처리</th>
+          </tr>
+        </thead>
+        <tbody id="bulk-preview-body"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+      <span style="font-size:12px;color:var(--muted);"><span id="bulk-preview-count">0</span>개 적용 예정</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn" onclick="closeBulkPreview()">취소</button>
+        <button class="btn btn-primary" id="bulk-confirm-btn" onclick="confirmBulkApply()">확인 — 적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     비정상 사유 입력 모달 (비정상 행 클릭 시)
+══════════════════════════════════════════════ -->
+<div id="reason-modal" class="reason-modal-backdrop" style="display:none;">
+  <div class="reason-modal" role="dialog" aria-modal="true">
+    <h3>비정상 사유 입력</h3>
+    <div id="reason-modal-meta" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+    <textarea id="reason-text" maxlength="500" rows="6"
+              placeholder="SR 승인 없이 실행한 사유 등 특이사항을 입력하세요."></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+      <span style="font-size:12px;color:var(--muted);"><span id="reason-count">0</span> / 500자</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn" onclick="closeReasonModal()">취소</button>
+        <button class="btn btn-primary" onclick="saveReason()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+  #dev-group-table { min-width: 1400px; }
+  #dev-group-table td[id^="dstatus-"] { white-space: nowrap; }
+  #dev-group-table tr[data-status="비정상"] { cursor: pointer; }
+  #dev-group-table td:nth-child(7) { padding: 2px 3px; }
+  #dev-group-table .sr-input { width: 100% !important; }
+  .section > div:has(> #dev-group-table) { margin-left: 0; margin-right: 0; }
+
+  /* 일괄 SR 적용 바 */
+  .bulkbar {
+    position: sticky; top: 0; z-index: 20;
+    padding: 6px 10px; margin-bottom: 8px;
+    background: #F7F8FA; border: 1px solid var(--line);
+  }
+  .bulkbar label { font-size: 12px !important; color: var(--ink-2) !important; }
+  .bulkbar input[type="number"], .bulkbar input[type="text"] { height: 28px !important; border-radius: 2px !important; border-color: var(--line) !important; }
+  .bulkbar #bulk-sr { font-family: var(--mono); }
+  .bulkbar .btn { height: 28px !important; line-height: normal !important; }
+</style>
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+const CUR_YM  = '{{ period }}';
+const CUR_DEV = {{ current_user.id }};
+const ROLE    = '{{ current_user.role }}';
+const CAN_EDIT_DEV = (ROLE !== 'viewer');
+
+/* ── 월 선택 → 페이지 이동 ── */
+document.getElementById('period-select').addEventListener('change', function () {
+  const url = new URL(window.location.href);
+  url.searchParams.set('year_month',   this.value);
+  url.searchParams.set('developer_id', CUR_DEV);
+  window.location.href = url.toString();
+});
+
+/* ── Enter 키 → 적용 ── */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.sr-input').forEach(inp => {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applySr(inp.dataset.groupId);
+      }
+    });
+  });
+  applyDevFilter();
+});
+
+/* ── SR 적용 ── */
+async function applySr(groupId) {
+  if (!CAN_EDIT_DEV) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const inp = document.getElementById('sr-' + groupId);
+  if (!inp) return;
+  const sr = inp.value.trim();
+
+  try {
+    const r = await postJSON('/dml/developer/apply-sr', { group_id: parseInt(groupId), sr_no: sr });
+    if (r.ok) {
+      if (r.group) _applyGroupState(groupId, r.group);
+      const msg = r.sr_found
+        ? `그룹 ${groupId} → ${sr} 적용 완료`
+        : `그룹 ${groupId} → ${sr} 적용됨 (SR DB에 없는 번호)`;
+      showToast(msg, r.sr_found ? 'ok' : 'warn');
+    } else {
+      showToast(r.message || '적용 실패', 'bad');
+    }
+  } catch (_) {}
+}
+
+/* ── SR 취소 ── */
+async function clearSr(groupId) {
+  if (!CAN_EDIT_DEV) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  if (!confirmAction(`그룹 ${groupId}의 SR을 제거할까요?`)) return;
+  try {
+    const r = await postJSON('/dml/developer/clear-sr', { group_id: parseInt(groupId) });
+    if (r.ok) {
+      if (r.group) _applyGroupState(groupId, r.group);
+      showToast(`그룹 ${groupId} SR 제거 완료`, 'ok');
+    } else {
+      showToast(r.message || '취소 실패', 'bad');
+    }
+  } catch (_) {}
+}
+
+/* ── DML여부 토글 (비DML이면 SR 없이도 정상·적용완료) — 새로고침 없이 인플레이스 갱신 ── */
+async function toggleDml(groupId, isDml) {
+  if (!CAN_EDIT_DEV) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const label = isDml
+    ? `그룹 ${groupId}을 DML로 변경할까요?`
+    : `그룹 ${groupId}을 비DML(SR 불필요)로 표시할까요?\n정상·적용완료로 처리됩니다.`;
+  if (!confirmAction(label)) return;
+  try {
+    const r = await postJSON('/dml/developer/set-dml', { group_id: parseInt(groupId), is_dml: isDml });
+    if (r.ok) {
+      if (r.group) _applyGroupState(groupId, r.group);
+      showToast(isDml ? `그룹 ${groupId} DML로 변경됨` : `그룹 ${groupId} 비DML로 표시됨 (정상 처리)`, 'ok');
+    } else {
+      showToast(r.message || '변경 실패', 'bad');
+    }
+  } catch (_) {}
+}
+
+/* ══════════════════════════════════════════════
+   비정상 사유 입력 모달
+══════════════════════════════════════════════ */
+let _reasonGroupId = null;
+
+function openReasonModal(groupId) {
+  if (!CAN_EDIT_DEV) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const row = document.getElementById('drow-' + groupId);
+  if (!row) return;
+  _reasonGroupId = groupId;
+  const ta = document.getElementById('reason-text');
+  ta.value = row.dataset.reason || '';
+  document.getElementById('reason-count').textContent = ta.value.length;
+  const tableCell = row.querySelector('td[title]');
+  const tableName = tableCell ? tableCell.getAttribute('title') : '';
+  document.getElementById('reason-modal-meta').textContent =
+    `그룹 ${groupId}${tableName ? ' · ' + tableName : ''} — 비정상`;
+  document.getElementById('reason-modal').style.display = 'flex';
+  ta.focus();
+}
+
+function closeReasonModal() {
+  document.getElementById('reason-modal').style.display = 'none';
+  _reasonGroupId = null;
+}
+
+async function saveReason() {
+  if (_reasonGroupId == null) return;
+  const reason = document.getElementById('reason-text').value;
+  const r = await postJSON('/dml/developer/set-reason',
+                           { group_id: parseInt(_reasonGroupId), reason });
+  if (r.ok) {
+    if (r.group) _applyGroupState(_reasonGroupId, r.group);
+    showToast('사유 저장 완료', 'ok');
+    closeReasonModal();
+  } else {
+    showToast(r.message || '사유 저장 실패', 'bad');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // 글자수 카운터
+  const ta = document.getElementById('reason-text');
+  if (ta) ta.addEventListener('input', () => {
+    document.getElementById('reason-count').textContent = ta.value.length;
+  });
+  // 배경 클릭 시 닫기
+  const backdrop = document.getElementById('reason-modal');
+  if (backdrop) backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) closeReasonModal();
+  });
+  // 비정상 행 클릭 → 모달 (입력 컨트롤 클릭은 무시)
+  const tbody = document.querySelector('#dev-group-table tbody');
+  if (tbody) tbody.addEventListener('click', e => {
+    if (e.target.closest('input, button, a, textarea, select')) return;
+    const row = e.target.closest('tr[data-status]');
+    if (!row || row.dataset.status !== '비정상') return;
+    openReasonModal(row.id.replace('drow-', ''));
+  });
+});
+
+/* ── SR 입력칸 상태별 색상 (정상=초록 / 비정상=노랑 / 미적용=빨강) ── */
+function _srInputColor(uiStatus) {
+  if (uiStatus === '정상')   return ['#f0fdf4', '#86efac'];
+  if (uiStatus === '비정상') return ['#fffbea', '#fcd34d'];
+  return ['#fef2f2', '#fca5a5'];  // 미적용
+}
+
+/* ══════════════════════════════════════════════
+   행 상태 통합 업데이트 (페이지 리로드 없이)
+   서버 group dict(is_dml, ui_status, sr_no, sr_title,
+   work_type, appr_date, close_date, reason) 기준으로
+   행 전체 셀을 Jinja 초기 렌더와 동일하게 재구성한다.
+══════════════════════════════════════════════ */
+function _applyGroupState(groupId, g) {
+  const row = document.getElementById('drow-' + groupId);
+  if (!row) return;
+
+  const isDml  = !!g.is_dml;
+  const ui     = g.ui_status || (isDml ? '비정상' : '정상');
+  const reason = g.reason || '';
+
+  // 행 데이터셋 + 배경
+  row.dataset.status = ui;
+  row.dataset.reason = reason;
+  row.style.background = (ui === '미적용') ? '#fff5f5' : '';
+
+  // SR 입력창
+  const inp = document.getElementById('sr-' + groupId);
+  if (inp) {
+    inp.dataset.srNo = g.sr_no || '';
+    if (!isDml) {
+      inp.value = 'DML이 아님';
+      inp.disabled = true;
+      inp.style.background  = '#f0fdf4';
+      inp.style.borderColor = '#86efac';
+      inp.style.color       = '#15803d';
+    } else {
+      inp.value = g.sr_no || '';
+      inp.disabled = false;
+      inp.style.color = '';
+      const [bg, bd] = _srInputColor(ui);
+      inp.style.background  = bg;
+      inp.style.borderColor = bd;
+    }
+  }
+
+  // SR 정보 셀 (제목/구분/승인일/종료일)
+  _updateSrInfo(groupId, g);
+
+  // DML여부 셀
+  const dmlCell = document.getElementById('dml-cell-' + groupId);
+  if (dmlCell) dmlCell.innerHTML = _renderDmlCell(groupId, isDml);
+
+  // 상태 셀
+  const stCell = document.getElementById('dstatus-' + groupId);
+  if (stCell) stCell.innerHTML = _renderStatusCell(ui, reason);
+
+  applyDevFilter();
+  _updateKpiFromDom();
+}
+
+function _renderDmlCell(groupId, isDml) {
+  if (isDml) {
+    return `<button class="btn btn-sm" id="dml-btn-${groupId}" onclick="toggleDml(${groupId}, false)" `
+         + `title="SR이 필요없는 비DML로 표시">비DML로</button>`;
+  }
+  return `<button class="btn btn-sm" id="dml-btn-${groupId}" onclick="toggleDml(${groupId}, true)" `
+       + `style="background:#e8f6ee;color:#1e7e44;border-color:#27ae60;" title="DML로 되돌리기">DML로</button>`;
+}
+
+function _renderStatusCell(ui, reason) {
+  if (ui === '정상') return '<span class="badge badge-ok">정상</span>';
+  if (ui === '비정상') {
+    const flag = (reason && reason.trim())
+      ? '<span class="reason-flag has" title="사유 입력됨 — 클릭하여 수정">사유</span>'
+      : '<span class="reason-flag none" title="사유 미입력 — 클릭하여 입력">사유 입력</span>';
+    return '<span class="badge badge-warn">비정상</span>' + flag;
+  }
+  return '<span class="badge badge-bad">미적용</span>';
+}
+
+function _updateSrInfo(groupId, info) {
+  const nonDml = (info && info.is_dml === false);
+  const map = { 'dsr-title': 'sr_title', 'dsr-type': 'work_type', 'dsr-appr': 'appr_date', 'dsr-close': 'close_date' };
+  for (const [prefix, key] of Object.entries(map)) {
+    const el = document.getElementById(`${prefix}-${groupId}`);
+    if (!el) continue;
+    if (nonDml) {
+      el.textContent = 'DML이 아님';   // 비DML — 5개 컬럼 모두 'DML이 아님'
+      el.title = 'DML이 아님';
+      continue;
+    }
+    const val = info[key] || '';
+    if (val) {
+      el.textContent = val;
+      el.title = val;
+    } else {
+      el.innerHTML = '<span class="td-empty">—</span>';  // 빈값일 때 대시 표시
+      el.title = '';
+    }
+  }
+}
+
+
+/* ── 상태 필터 ── */
+function applyDevFilter() {
+  const val   = (document.getElementById('dev-status-filter') || {}).value || 'all';
+  const tbl   = document.getElementById('dev-group-table');
+  if (!tbl) return;
+  let visible = 0;
+  tbl.querySelectorAll('tbody tr[data-status]').forEach(tr => {
+    const show = val === 'all' || tr.dataset.status === val;
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+    // 상세 서브행도 부모 행과 연동
+    const gid = tr.id.replace('drow-', '');
+    const detailRow = document.getElementById('detail-' + gid);
+    if (detailRow && !show) detailRow.style.display = 'none';
+  });
+  const cnt = document.getElementById('dev-count');
+  if (cnt) cnt.textContent = `${visible}개 표시`;
+}
+
+/* ── 그룹 상세 토글 ── */
+const _logCache = {};
+
+async function toggleLogs(groupId) {
+  const detailRow  = document.getElementById('detail-' + groupId);
+  const detailBody = document.getElementById('detail-body-' + groupId);
+  const btn        = document.getElementById('expand-' + groupId);
+  if (!detailRow) return;
+
+  if (detailRow.style.display !== 'none') {
+    detailRow.style.display = 'none';
+    btn.textContent = '쿼리';
+    return;
+  }
+
+  if (_logCache[groupId]) {
+    detailBody.innerHTML = _logCache[groupId];
+    detailRow.style.display = '';
+    btn.textContent = '닫기';
+    return;
+  }
+
+  btn.textContent = '…';
+  try {
+    const res  = await fetch(`/dml/developer/group/${groupId}/logs`);
+    const data = await res.json();
+    let html;
+    if (!data.ok || !data.logs || !data.logs.length) {
+      html = '<em style="color:#999;font-size:12px;">행 없음</em>';
+    } else {
+      const rows = data.logs.map(l => `
+        <tr style="border-bottom:1px solid #dce3ed;font-size:12px;">
+          <td style="padding:5px 10px;color:#6a737d;white-space:nowrap;">${escHtml(l.request_time)}</td>
+          <td style="padding:5px 10px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:#2e5a8e;"
+              title="${escHtml(l.query_summary)}"
+              onclick="openQueryModal(this.title)">${escHtml(l.query_summary) || '<span style="color:#ccc;">—</span>'}</td>
+          <td style="padding:5px 10px;color:#2e5a8e;white-space:nowrap;">${escHtml(l.sr_no) || '<span style="color:#ccc;">—</span>'}</td>
+        </tr>`).join('');
+      html = `
+        <table class="g" style="background:#fff;">
+          <thead>
+            <tr>
+              <th style="width:160px;">요청시각</th>
+              <th>쿼리 (클릭하면 전체 보기)</th>
+              <th style="width:160px;">SR번호</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+    detailBody.innerHTML = html;
+    _logCache[groupId] = html;
+  } catch (_) {
+    detailBody.innerHTML = '<em style="color:#e74c3c;font-size:12px;">로드 실패</em>';
+  }
+  detailRow.style.display = '';
+  btn.textContent = '닫기';
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ══════════════════════════════════════════════
+   KPI DOM 재집계 (액션 후 카드 즉시 갱신)
+══════════════════════════════════════════════ */
+function _updateKpiFromDom() {
+  const rows = document.querySelectorAll('#dev-group-table tbody tr[data-status]');
+  let total = 0, pending = 0, noReason = 0;
+  rows.forEach(row => {
+    total++;
+    if (row.dataset.status === '미적용') {
+      pending++;
+    } else if (row.dataset.status === '비정상' && !(row.dataset.reason && row.dataset.reason.trim())) {
+      noReason++;
+    }
+  });
+  const applied = total - pending - noReason;
+  const pct     = total ? Math.round(applied / total * 100) : 0;
+
+  const elA = document.getElementById('kpi-applied');
+  const elN = document.getElementById('kpi-no-reason');
+  const elP = document.getElementById('kpi-pending');
+  const elPct = document.getElementById('kpi-pct');
+  const elBar = document.getElementById('kpi-bar');
+
+  if (elA)   elA.textContent   = applied;
+  if (elN)   elN.textContent   = noReason;
+  if (elP)   elP.textContent   = pending;
+  if (elPct) elPct.textContent = pct + '%';
+  if (elBar) {
+    elBar.style.width = pct + '%';
+  }
+}
+
+/* ══════════════════════════════════════════════
+   일괄 SR 적용 — 범위 하이라이트 · 프리뷰 · 확정
+══════════════════════════════════════════════ */
+let _bulkGroupIds = [];
+
+function _allMainRows() {
+  return Array.from(document.querySelectorAll('#dev-group-table tbody tr[id^="drow-"]'));
+}
+
+function _rowSeq(row) {
+  const cell = row.querySelector('td:first-child');
+  return cell ? parseInt(cell.textContent.trim()) : NaN;
+}
+
+/* 대책 3: 범위 입력 시 해당 행 파란 테두리 하이라이트 */
+function highlightRange() {
+  const start = parseInt((document.getElementById('bulk-start') || {}).value);
+  const end   = parseInt((document.getElementById('bulk-end')   || {}).value);
+  clearBulkHighlight();
+  if (isNaN(start) || isNaN(end) || start > end) return;
+  _allMainRows().forEach(row => {
+    const s = _rowSeq(row);
+    if (s >= start && s <= end) {
+      row.style.outline       = '2px solid #0A5FB4';
+      row.style.outlineOffset = '-2px';
+    }
+  });
+}
+
+function clearBulkHighlight() {
+  _allMainRows().forEach(row => {
+    row.style.outline       = '';
+    row.style.outlineOffset = '';
+  });
+}
+
+/* 대책 1: 적용 전 프리뷰 모달 */
+function showBulkPreview() {
+  if (!CAN_EDIT_DEV) { showToast(PERM_DENIED_MSG, 'warn'); return; }
+  const start        = parseInt((document.getElementById('bulk-start') || {}).value);
+  const end          = parseInt((document.getElementById('bulk-end')   || {}).value);
+  const sr           = (document.getElementById('bulk-sr') || {}).value.trim();
+  const skipExisting = document.getElementById('bulk-skip-existing').checked;
+
+  if (isNaN(start) || isNaN(end)) { showToast('시작/종료 순번을 입력하세요.', 'warn'); return; }
+  if (start > end)                 { showToast('시작 순번이 종료 순번보다 작아야 합니다.', 'warn'); return; }
+
+  const items = [];
+  _allMainRows().forEach(row => {
+    const seq = _rowSeq(row);
+    if (isNaN(seq) || seq < start || seq > end) return;
+
+    const gid        = parseInt(row.id.replace('drow-', ''));
+    const inp        = document.getElementById('sr-' + gid);
+    const isNonDml   = inp && inp.disabled;
+    const existingSr = inp ? (inp.dataset.srNo || '') : '';
+    const tableCell  = row.querySelectorAll('td')[3];
+    const tableName  = tableCell
+      ? (tableCell.getAttribute('title') || tableCell.textContent.trim())
+      : '';
+
+    let skipReason = null;
+    if (isNonDml)                        skipReason = '비DML';
+    else if (skipExisting && existingSr) skipReason = '기존 SR 보호';
+
+    items.push({ seq, gid, tableName, existingSr, skipReason });
+  });
+
+  if (!items.length) {
+    showToast(`순번 ${start}~${end} 범위에 해당하는 그룹이 없습니다.`, 'warn');
+    return;
+  }
+
+  _bulkGroupIds = items.filter(i => !i.skipReason).map(i => i.gid);
+  const applyCount = _bulkGroupIds.length;
+  const skipCount  = items.length - applyCount;
+
+  document.getElementById('bulk-preview-meta').textContent =
+    `순번 ${start}~${end}  ·  SR번호: ${sr}  ·  적용 ${applyCount}건 / 건너뜀 ${skipCount}건`;
+
+  /* 대책 2: 기존 SR 보호 상태를 미리보기 테이블에 표시 */
+  document.getElementById('bulk-preview-body').innerHTML = items.map(item => {
+    let actionHtml;
+    let rowStyle = '';
+    if (item.skipReason) {
+      actionHtml = `<span style="color:var(--muted);">건너뜀 · ${escHtml(item.skipReason)}</span>`;
+      rowStyle   = 'opacity:0.5;';
+    } else {
+      actionHtml = '<span style="color:var(--ok);font-weight:700;">적용</span>';
+    }
+    const srCell = item.existingSr
+      ? `<span style="color:#e67e22;font-size:11px;">${escHtml(item.existingSr)}</span>`
+      : '<span style="color:#bbb;">—</span>';
+    return `<tr style="border-bottom:1px solid #eaecef;${rowStyle}">
+      <td style="padding:5px 10px;text-align:center;color:#6a737d;">${item.seq}</td>
+      <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${escHtml(item.tableName)}">${escHtml(item.tableName)}</td>
+      <td style="padding:5px 10px;">${srCell}</td>
+      <td style="padding:5px 10px;text-align:center;">${actionHtml}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('bulk-preview-count').textContent = applyCount;
+  const btn = document.getElementById('bulk-confirm-btn');
+  btn.textContent = `확인 — ${applyCount}건 적용`;
+  btn.disabled    = (applyCount === 0);
+
+  document.getElementById('bulk-preview-modal').style.display = 'flex';
+}
+
+function closeBulkPreview() {
+  document.getElementById('bulk-preview-modal').style.display = 'none';
+  _bulkGroupIds = [];
+}
+
+async function confirmBulkApply() {
+  if (!_bulkGroupIds.length) { closeBulkPreview(); return; }
+  const sr           = document.getElementById('bulk-sr').value.trim();
+  const skipExisting = document.getElementById('bulk-skip-existing').checked;
+  const btn          = document.getElementById('bulk-confirm-btn');
+
+  btn.disabled    = true;
+  btn.textContent = '적용 중…';
+
+  try {
+    const r = await postJSON('/dml/developer/bulk-apply-sr', {
+      group_ids:     _bulkGroupIds,
+      sr_no:         sr,
+      skip_existing: skipExisting,
+    });
+
+    if (r.ok) {
+      closeBulkPreview();
+      clearBulkHighlight();
+      (r.applied || []).forEach(g => _applyGroupState(g.group_id, g));
+      const n   = (r.applied || []).length;
+      const msg = r.sr_found
+        ? `${n}개 그룹에 ${sr} 적용 완료`
+        : `${n}개 그룹에 ${sr} 적용됨 (SR DB에 없는 번호)`;
+      showToast(msg, r.sr_found ? 'ok' : 'warn');
+    } else {
+      showToast(r.message || '일괄 적용 실패', 'bad');
+      btn.disabled    = false;
+      btn.textContent = '확인 — 적용';
+    }
+  } catch (_) {
+    showToast('서버 오류가 발생했습니다.', 'bad');
+    btn.disabled    = false;
+    btn.textContent = '확인 — 적용';
+  }
+}
+
+/* 프리뷰 모달 배경 클릭 시 닫기 */
+document.addEventListener('DOMContentLoaded', () => {
+  const bd = document.getElementById('bulk-preview-modal');
+  if (bd) bd.addEventListener('click', e => { if (e.target === bd) closeBulkPreview(); });
+});
+</script>
+{% endblock %}

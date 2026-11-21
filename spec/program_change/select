@@ -1,0 +1,6 @@
+
+/*enumlabel 조회*/
+SELECT enumlabel FROM pg_enum e
+JOIN pg_type t ON e.enumtypid = t.oid
+WHERE t.typname = 'system_code_t'
+ORDER BY e.enumsortorder;

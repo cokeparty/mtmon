@@ -1,0 +1,30 @@
+
+INSERT INTO program_change.server_config
+(system_code, ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_path,
+ log_dir, log_pattern, include_path, include_flag,
+ nfs_ssh_host, nfs_ssh_port, nfs_ssh_user, nfs_ssh_password, nfs_ssh_key_path, nfs_base_dir)
+VALUES
+('PMS',  '203.238.192.37', 22, 'bpmu', '!0Ubpmbpm@@', NULL,
+ '/data/sftp_log_backup',  '*.log', '/app/pms',  'Y',
+ '10.100.1.52', 22, 'taksi', '!0ehdak@', NULL, '/doc_nfs/infosystem/Document');
+
+
+
+INSERT INTO program_change.server_config
+(system_code, ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_path,
+ log_dir, log_pattern, include_path, include_flag,
+ nfs_ssh_host, nfs_ssh_port, nfs_ssh_user, nfs_ssh_password, nfs_ssh_key_path, nfs_base_dir)
+VALUES
+ ('EPRO', '203.238.192.185', 22, 'eprocu', '!0dnsdud@', NULL,
+ '/data/sftp_log_backup', '*.log', '/tomcat/webapps/ROOT', ' _ i ',
+ '10.100.1.52', 22, 'taksi', '!0ehdak@', NULL, '/doc_nfs/infosystem/Document');
+
+
+ INSERT INTO program_change.server_config
+(system_code, ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_path,
+ log_dir, log_pattern, include_path, include_flag,
+ nfs_ssh_host, nfs_ssh_port, nfs_ssh_user, nfs_ssh_password, nfs_ssh_key_path, nfs_base_dir)
+VALUES
+ ('SR', '203.246.184.155', 22, 'ssru', '!0ussr@@', NULL,
+ '/data/sftp_log_backup', '*.log', '/tomcat8/webapps/P010', 'WRITE',
+ '10.100.1.52', 22, 'taksi', '!0ehdak@', NULL, '/doc_nfs/infosystem/Document');

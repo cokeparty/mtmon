@@ -1,0 +1,27 @@
+# ── Web Framework ──
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+jinja2==3.1.4
+python-multipart==0.0.12
+
+# ── Settings ──
+pydantic-settings==2.6.1
+
+# ── Database (ORM + PostgreSQL) ──
+sqlalchemy==2.0.36
+psycopg2-binary
+
+# ── SSH (A서버 xferlog 수집 / B서버 NFS 스캔) ──
+paramiko==3.5.0
+
+# ── Excel 출력 ──
+openpyxl==3.1.5
+pandas>=2.2.3
+
+# ── Date Utility (배치 스크립트 전월 산정) ──
+python-dateutil==2.9.0.post0
+
+# ── auth ──
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+itsdangerous>=2.0

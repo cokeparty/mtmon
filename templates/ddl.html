@@ -1,0 +1,695 @@
+{% extends "base.html" %}
+{% block title %}DDL 모니터링{% endblock %}
+
+{% block content %}
+<!-- ══════════════════════════════════════════════
+     페이지 헤더
+══════════════════════════════════════════════ -->
+<div class="page-head">
+  <h2>프로시저 (DDL)</h2>
+  <div class="actions">
+    {% if last_uploaded_at %}<span class="page-meta">마지막 CSV 업로드 {{ last_uploaded_at }}</span><span class="tb-sep"></span>{% endif %}
+    <label for="period-select">회차</label>
+    <input type="month" id="period-select" value="{{ period }}">
+
+    <button id="btn-upload" class="btn btn-primary"
+            onclick="if(ROLE!=='operator'){showToast(PERM_DENIED_MSG,'warn');return;}document.getElementById('ddl-csv-file').click()">
+      CSV 업로드
+    </button>
+    <input type="file" id="ddl-csv-file" accept=".csv"
+           style="display:none" onchange="onUpload(this)">
+
+    <button id="btn-excel-ddl" class="btn" onclick="downloadDdlExcel()">엑셀</button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="db-error-banner">
+  DB 연결 실패 — 서버에 접속할 수 없습니다. 네트워크 또는 DB 상태를 확인하세요.
+</div>
+{% endif %}
+
+<!-- ══════════════════════════════════════════════
+     시스템 탭
+══════════════════════════════════════════════ -->
+<div class="tabs">
+  {% for s in ['HR', 'EPRO', 'SR', 'PMS'] %}
+  <button class="tab {% if s == system_code %}active{% endif %}"
+          onclick="changeSystem('{{ s }}')">{{ s }}</button>
+  {% endfor %}
+</div>
+
+<!-- ══════════════════════════════════════════════
+     KPI 카드
+══════════════════════════════════════════════ -->
+<div class="card-grid">
+  <div class="card">
+    <div class="card-title">전체 로그</div>
+    <div class="card-num">{{ summary.total | default(0) }}</div>
+    <div class="card-sub">{{ period }} {{ system_code }}</div>
+  </div>
+  <div class="card ok">
+    <div class="card-title">SR 적용 완료</div>
+    <div class="card-num" id="kpi-applied">{{ summary.applied | default(0) }}</div>
+  </div>
+  <div class="card caution">
+    <div class="card-title">사유미입력</div>
+    <div class="card-num" id="kpi-no-reason">
+      {{ summary.no_reason | default(0) }}
+    </div>
+    <div class="card-sub">비정상 + 사유 없음</div>
+  </div>
+  <div class="card warn">
+    <div class="card-title">미적용</div>
+    <div class="card-num" id="kpi-pending">{{ summary.pending | default(0) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">진행률</div>
+    <div class="card-num" id="kpi-pct">{{ summary.progress_pct | default(0) }}%</div>
+    <div class="progress-wrap" style="margin-top:6px;">
+      <div class="progress-bar" id="kpi-bar"
+           style="width:{{ summary.progress_pct | default(0) }}%;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     로그 목록 + SR 입력
+══════════════════════════════════════════════ -->
+<div class="section">
+  <h3>DDL 로그 — SR 번호 입력 <span style="margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;">SR번호 칸에 입력 후 <kbd>Enter</kbd> → 저장 · 노란 칸 = 입력 필요</span></h3>
+  <div class="dml-legend">
+    <span><span class="badge badge-bad" style="font-size:11px;">미적용</span> SR 미입력 또는 번호 없음</span>
+    <span><span class="badge badge-warn" style="font-size:11px;">비정상</span> SR 작업승인일 전 실행·긴급 기한 초과</span>
+    <span><span class="badge badge-ok" style="font-size:11px;">정상</span> 승인일 이후 실행 (긴급: 실행 후 5일 이내 SR종료)</span>
+  </div>
+
+  <div class="filter-bar" style="margin-bottom:14px;">
+    <input type="text" id="ddl-search" placeholder="오브젝트명 / 계정 / SR번호 검색"
+           style="min-width:220px;">
+    <select id="ddl-type-filter" onchange="applyFilters()">
+      <option value="all">전체 타입</option>
+      <option value="CREATE">CREATE</option>
+      <option value="ALTER">ALTER</option>
+      <option value="DROP">DROP</option>
+      <option value="TRUNCATE">TRUNCATE</option>
+      <option value="RENAME">RENAME</option>
+    </select>
+    <select id="ddl-status-filter" onchange="applyFilters()">
+      <option value="all">전체 상태</option>
+      <option value="미적용">미적용</option>
+      <option value="비정상">비정상</option>
+      <option value="정상">정상</option>
+    </select>
+    <span id="ddl-count" style="font-size:12px;color:#6a737d;"></span>
+  </div>
+  
+  {% if not logs %}
+  <div class="empty-state">
+    <div class="empty-title">표시할 DDL 로그가 없습니다</div>
+    <div class="empty-desc">
+      <strong>{{ period }}</strong> · <strong>{{ system_code }}</strong> 회차에 등록된 로그가 없습니다.<br>
+      상단의 <strong>CSV 업로드</strong> 버튼으로 DDL 로그 파일을 등록하거나,<br>
+      회차 / 시스템 탭을 변경해 다른 데이터를 확인해 주세요.
+    </div>
+  </div>
+  {% else %}
+  <div style="overflow-x:auto;">
+    <table id="ddl-table" class="g ddl-grid">
+      <thead>
+        <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+          <th class="th" style="text-align:center;width:40px;">#</th>
+          <th class="th" style="width:150px;">요청시각</th>
+          <th class="th">사용자명</th>
+          <th class="th">접속계정</th>
+          <th class="th">대상 오브젝트</th>
+          <th class="th" style="width:90px;">DDL 타입</th>
+          <th class="th" style="width:190px;">SR 번호</th>
+          <th class="th">SR제목</th>
+          <th class="th" style="width:80px;">작업구분</th>
+          <th class="th" style="width:95px;">작업승인일</th>
+          <th class="th" style="width:95px;">SR종료일</th>
+          <th class="th" style="text-align:center;width:64px;">변경요청승인</th>
+          <th class="th" style="text-align:center;width:64px;">사용자테스트</th>
+          <th class="th" style="text-align:center;width:64px;">이관전승인</th>
+          <th class="th" style="width:80px;">개발자</th>
+          <th class="th" style="width:80px;">이관자</th>
+          <th class="th" style="width:80px;">검토수행자</th>
+          <th class="th" style="text-align:center;width:90px;">상태</th>
+          <th class="th" style="text-align:center;width:60px;">상세</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in logs %}
+        <tr id="ddlrow-{{ l.log_id }}"
+            data-status="{{ l.ui_status }}"
+            data-type="{{ l.ddl_type }}"
+            data-abnormal="{{ 'true' if l.is_abnormal else 'false' }}"
+            data-reason="{{ l.ddl_reason }}"
+            style="border-bottom:1px solid #eaecef;
+                   {% if l.ui_status == '비정상' %}background:#fffbea;
+                   {% elif l.ui_status == '미적용' %}background:#fff5f5;{% endif %}">
+          <td class="td" style="text-align:center;color:#6a737d;">{{ loop.index }}</td>
+          <td class="td" style="font-size:12px;color:#6a737d;white-space:nowrap;">
+            {{ l.request_time }}
+          </td>
+          <td class="td"><code style="font-size:12px;">{{ l.db_user }}</code></td>
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ l.conn_account }}</td>
+          <td class="td" style="font-weight:500;">{{ l.target_object }}</td>
+          <td class="td">
+            {% if l.ddl_type in ['DROP', 'TRUNCATE'] %}
+              <span class="badge badge-bad">{{ l.ddl_type }}</span>
+            {% elif l.ddl_type == 'ALTER' %}
+              <span class="badge badge-warn">{{ l.ddl_type }}</span>
+            {% elif l.ddl_type == 'CREATE' %}
+              <span class="badge badge-ok">{{ l.ddl_type }}</span>
+            {% else %}
+              <span class="badge badge-pending">{{ l.ddl_type }}</span>
+            {% endif %}
+          </td>
+          <td class="td">
+            <input type="text"
+                   id="ddlsr-{{ l.log_id }}"
+                   class="ddl-sr-input"
+                   data-log-id="{{ l.log_id }}"
+                   value="{{ l.sr_no }}"
+                   placeholder="H01-YYYYMMDD-NNN"
+                   style="width:120px;font-size:12px;
+                   {% if l.ui_status == '정상' %}background:#f0fdf4;border-color:#86efac;
+                   {% elif l.ui_status == '비정상' %}background:#fffbea;border-color:#fcd34d;
+                   {% else %}background:#fef2f2;border-color:#fca5a5;
+                   {% endif %}">
+          </td>
+          <td class="td" id="ddlsr-title-{{ l.log_id }}"
+            style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;"
+            title="{{ l.sr_title }}">
+            {% if l.sr_title %}{{ l.sr_title }}{% else %}<span style="color:#ccc;">—</span>{% endif %}
+          </td>
+          <td class="td" id="ddlsr-type-{{ l.log_id }}"
+              style="font-size:12px;white-space:nowrap;">{{ l.work_type }}</td>
+          <td class="td" id="ddlsr-appr-{{ l.log_id }}"
+              style="font-size:12px;white-space:nowrap;">{{ l.appr_date }}</td>
+          <td class="td" id="ddlsr-close-{{ l.log_id }}"
+              style="font-size:12px;white-space:nowrap;">{{ l.close_date }}</td>
+          <!-- 6개 편집 칼럼 -->
+          <td class="td" style="text-align:center;">
+            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="proc_change_approval"
+                   value="{{ l.proc_change_approval }}" style="width:52px;text-align:center;">
+          </td>
+          <td class="td" style="text-align:center;">
+            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="user_test"
+                   value="{{ l.user_test }}" style="width:52px;text-align:center;">
+          </td>
+          <td class="td" style="text-align:center;">
+            <input class="ddl-edit-inp" data-log-id="{{ l.log_id }}" data-field="pre_release_approval"
+                   value="{{ l.pre_release_approval }}" style="width:52px;text-align:center;">
+          </td>
+          <td class="td">
+            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="developer"
+                   value="{{ l.developer }}" style="width:72px;">
+          </td>
+          <td class="td">
+            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="releaser"
+                   value="{{ l.releaser }}" style="width:72px;">
+          </td>
+          <td class="td">
+            <input class="ddl-edit-inp wide" data-log-id="{{ l.log_id }}" data-field="reviewer_name"
+                   value="{{ l.reviewer_name }}" style="width:72px;">
+          </td>
+          <td class="td" style="text-align:center;white-space:nowrap;" id="ddlstatus-{{ l.log_id }}">
+            {% if l.ui_status == '정상' %}
+              <span class="badge badge-ok">정상</span>
+            {% elif l.ui_status == '비정상' %}
+              <span class="badge badge-warn">비정상</span>
+              <span class="reason-flag {% if not l.ddl_reason %}none{% endif %}" id="ddlrflag-{{ l.log_id }}"
+                    onclick="openReasonModal({{ l.log_id }})"
+                    title="{{ l.ddl_reason or '사유 미입력' }}">
+                {%- if l.ddl_reason -%}사유{%- else -%}사유 입력{%- endif -%}
+              </span>
+            {% else %}
+              <span class="badge badge-bad">미적용</span>
+            {% endif %}
+          </td>
+          <td class="td" style="text-align:center;">
+            <button id="ddlexp-{{ l.log_id }}" class="btn-toggle" onclick="toggleDetail({{ l.log_id }})">쿼리</button>
+          </td>
+        </tr>
+        <tr id="ddldet-{{ l.log_id }}" class="ddl-detail-row"
+            style="display:none;border-bottom:2px solid #d0d7de;">
+          <td colspan="19">
+            <table class="g" style="background:#fff;">
+              <thead>
+                <tr>
+                  <th style="width:160px;">요청시각</th>
+                  <th>쿼리 (클릭하면 전체 보기)</th>
+                  <th style="width:160px;">SR번호</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom:1px solid #dce3ed;font-size:12px;">
+                  <td style="padding:5px 10px;color:#6a737d;white-space:nowrap;">{{ l.request_time }}</td>
+                  <td style="padding:5px 10px;max-width:420px;overflow:hidden;text-overflow:ellipsis;
+                             white-space:nowrap;cursor:pointer;color:#2e5a8e;"
+                      title="{{ l.query_summary }}"
+                      onclick="openQueryModal(this.title)">{{ l.query_summary or '—' }}</td>
+                  <td style="padding:5px 10px;color:#2e5a8e;white-space:nowrap;">{{ l.sr_no or '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="foot-note">총 {{ logs | length }}개 로그</div>
+  {% endif %}
+</div>
+
+<!-- 사유 입력 모달 -->
+<div id="ddl-reason-modal" class="reason-modal-backdrop" style="display:none;">
+  <div class="reason-modal" role="dialog" aria-modal="true">
+    <h3>비정상 사유 입력</h3>
+    <textarea id="ddl-reason-text" rows="5"
+              placeholder="사유를 입력하세요 (최대 500자)…" maxlength="500"></textarea>
+    <div class="reason-modal-actions">
+      <button class="btn" onclick="closeReasonModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveDdlReason()">저장</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+  #ddl-table { min-width: 1700px; }
+  #ddl-table td:nth-child(7) { padding: 2px 3px; }
+  #ddl-table .ddl-sr-input { width: 100% !important; }
+  #ddl-table tr[data-status="비정상"] { cursor: default; }
+  .section > div:has(> #ddl-table) { margin-left: 0; margin-right: 0; }
+  .ddl-detail-row > td { padding: 8px 12px 10px 48px !important; }
+</style>
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+const CUR_YM = '{{ period }}';
+const CUR_SC = '{{ system_code }}';
+const ROLE   = '{{ current_user.role }}';
+
+/* ── DDL 타입 배지 색상 (Jinja 매크로 대신 JS 사용) ── */
+function ddlBadgeClass(t) {
+  return { CREATE:'badge-ok', ALTER:'badge-done', DROP:'badge-bad',
+           TRUNCATE:'badge-bad', RENAME:'badge-pending' }[t] || 'badge-pending';
+}
+
+/* ── 시스템 탭 ── */
+function changeSystem(code) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('system_code', code);
+  url.searchParams.set('year_month',  CUR_YM);
+  window.location.href = url.toString();
+}
+
+/* ── 월 선택 ── */
+document.getElementById('period-select').addEventListener('change', function () {
+  const url = new URL(window.location.href);
+  url.searchParams.set('year_month',  this.value);
+  url.searchParams.set('system_code', CUR_SC);
+  window.location.href = url.toString();
+});
+
+/* ── 엑셀 다운로드 ── */
+async function downloadDdlExcel() {
+  const ym  = document.getElementById('period-select').value || CUR_YM;
+  const url = `/ddl/excel?year_month=${ym}&system_code=${CUR_SC}`;
+  const btn = document.getElementById('btn-excel-ddl');
+  btn.disabled = true;
+  btn.textContent = '다운로드 중…';
+  try {
+    const res = await fetch(url);
+    const ct  = res.headers.get('Content-Type') || '';
+    if (ct.includes('spreadsheetml') || ct.includes('octet-stream')) {
+      const blob = await res.blob();
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = `DDL_${ym}_${CUR_SC}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.message || '내보낼 데이터가 없습니다.', 'bad');
+    }
+  } catch (e) {
+    showToast('엑셀 다운로드 오류: ' + e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '엑셀';
+  }
+}
+
+/* ── CSV 업로드 ── */
+async function onUpload(input) {
+  if (!input.files[0]) return;
+  const btn = document.getElementById('btn-upload');
+  btn.disabled = true; btn.textContent = '업로드 중…';
+
+  const ym  = document.getElementById('period-select').value;
+  const url = `/ddl/upload?year_month=${ym}&system_code=${CUR_SC}`;
+  const fd  = new FormData();
+  fd.append('file', input.files[0]);
+
+  try {
+    const res  = await fetch(url, { method: 'POST', body: fd });
+    if (res.status === 403) {
+      const d = await res.json();
+      showToast(d.message || '권한이 부족합니다. 관리자에게 문의하세요.', 'warn');
+      return;
+    }
+    const data = await res.json();
+    if (data.ok) {
+      const s = data.stats;
+      showToast(
+        `업로드 완료 — 전체 ${s.total_rows}행 ` +
+        `(자동 ${s.auto} + 전파 ${s.propagated} / 미매핑 ${s.unmapped} / 위험 ${s.abnormal})`,
+        'ok'
+      );
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      showToast('업로드 실패: ' + (data.message || ''), 'bad');
+    }
+  } catch (e) {
+    showToast('업로드 오류: ' + e.message, 'bad');
+  } finally {
+    btn.disabled = false; btn.textContent = 'CSV 업로드';
+    input.value = '';
+  }
+}
+
+
+/* ── 쿼리 세부 행 토글 ── */
+function toggleDetail(logId) {
+  const det = document.getElementById('ddldet-' + logId);
+  const btn = document.getElementById('ddlexp-' + logId);
+  if (!det) return;
+  const isHidden = det.style.display === 'none';
+  det.style.display = isHidden ? '' : 'none';
+  if (btn) btn.textContent = isHidden ? '닫기' : '쿼리';
+}
+
+/* ── SR 적용 / 취소 ── */
+async function applyDdlSr(logId) {
+  const inp = document.getElementById('ddlsr-' + logId);
+  const sr  = inp ? inp.value.trim() : '';
+
+  const r = await postJSON('/ddl/apply-sr', { log_id: parseInt(logId), sr_no: sr });
+  if (r.ok) {
+    const uiStatus = r.log ? (r.log.ui_status || '비정상') : '비정상';
+    _setApplied(logId, sr, uiStatus);
+    if (r.log) {
+      const setCell = (suffix, val) => {
+        const el = document.getElementById(`ddlsr-${suffix}-${logId}`);
+        if (!el) return;
+        const target = el.querySelector('div') || el;
+        target.textContent = val || '';
+        el.title = val || '';
+      };
+      setCell('title', r.log.sr_title);
+      setCell('type',  r.log.work_type);
+      setCell('appr',  r.log.appr_date);
+      setCell('close', r.log.close_date);
+      // 이관전승인 편집 인풋 항상 최신화
+      const preInp = document.querySelector(
+        `.ddl-edit-inp[data-log-id="${logId}"][data-field="pre_release_approval"]`);
+      if (preInp && r.log.pre_release_approval !== undefined) {
+        preInp.value = r.log.pre_release_approval || '';
+        _paintEditInp(preInp);
+      }
+    }
+    const msg = r.sr_found
+      ? `${logId} → ${sr} 적용 완료`
+      : `${logId} → ${sr} 적용됨 (SR DB에 없는 번호)`;
+    showToast(msg, r.sr_found ? 'ok' : 'warn');
+  } else {
+    if (r._forbidden) return;
+    showToast(r.message || '적용 실패', 'bad');
+  }
+}
+
+async function clearDdlSr(logId) {
+  if (!confirmAction(`로그 ${logId}의 SR을 제거할까요?`)) return;
+  const r = await postJSON('/ddl/clear-sr', { log_id: parseInt(logId) });
+  if (r.ok) {
+    showToast(`로그 ${logId} SR 제거`, 'ok');
+    _setPending(logId);
+  } else {
+    if (r._forbidden) return;
+    showToast(r.message || '취소 실패', 'bad');
+  }
+}
+
+function _updateKpi() {
+  const tbl = document.getElementById('ddl-table');
+  if (!tbl) return;
+  const rows = [...tbl.querySelectorAll('tbody tr[data-status]')];
+  const total = rows.length;
+  // 적용완료: 정상, 또는 비정상+사유있음
+  const applied  = rows.filter(tr => {
+    const st = tr.dataset.status;
+    const r  = (tr.dataset.reason || '').trim();
+    return st === '정상' || (st === '비정상' && r);
+  }).length;
+  // 미적용: SR없음
+  const pending  = rows.filter(tr => tr.dataset.status === '미적용').length;
+  // 사유미입력: 비정상+사유없음
+  const noReason = rows.filter(tr => {
+    const st = tr.dataset.status;
+    const r  = (tr.dataset.reason || '').trim();
+    return st === '비정상' && !r;
+  }).length;
+  const pct = total ? Math.round(applied / total * 100) : 0;
+
+  const elA = document.getElementById('kpi-applied');
+  const elP = document.getElementById('kpi-pending');
+  const elN = document.getElementById('kpi-no-reason');
+  const elR = document.getElementById('kpi-pct');
+  const elB = document.getElementById('kpi-bar');
+  if (elA) elA.textContent = applied;
+  if (elP) elP.textContent = pending;
+  if (elN) elN.textContent = noReason;
+  if (elR) elR.textContent = `${pct}%`;
+  if (elB) {
+    elB.style.width = `${pct}%`;
+  }
+}
+
+/* ── SR 입력칸 상태별 색상 (정상=초록 / 비정상=노랑 / 미적용=빨강) ── */
+function _srInputColor(uiStatus) {
+  if (uiStatus === '정상')   return ['#f0fdf4', '#86efac'];
+  if (uiStatus === '비정상') return ['#fffbea', '#fcd34d'];
+  return ['#fef2f2', '#fca5a5'];  // 미적용
+}
+
+/* ── 편집 입력칸 색칠: 값 있으면 행 상태색, 비어있으면 흰색 ── */
+function _paintEditInp(inp) {
+  const tr = inp.closest('tr');
+  const status = tr ? (tr.dataset.status || '') : '';
+  if (inp.value.trim()) {
+    const [bg, bd] = _srInputColor(status);
+    inp.style.background  = bg;
+    inp.style.borderColor = bd;
+  } else {
+    inp.style.background  = '#fff';
+    inp.style.borderColor = '#d0d7de';
+  }
+}
+
+function _rowBg(uiStatus) {
+  if (uiStatus === '비정상') return '#fffbea';
+  if (uiStatus === '미적용') return '#fff5f5';
+  return '';
+}
+
+function _setApplied(logId, sr, uiStatus) {
+  const row = document.getElementById('ddlrow-'    + logId);
+  const st  = document.getElementById('ddlstatus-' + logId);
+  const clr = document.getElementById('ddlclr-'    + logId);
+  const inp = document.getElementById('ddlsr-'     + logId);
+
+  const isPending = (uiStatus === '미적용');
+  let badgeHtml;
+  if (uiStatus === '정상')      badgeHtml = '<span class="badge badge-ok">정상</span>';
+  else if (isPending)          badgeHtml = '<span class="badge badge-bad">미적용</span>';
+  else                         badgeHtml = '<span class="badge badge-warn">비정상</span>';
+
+  if (row) {
+    row.dataset.status = uiStatus;
+    row.style.background = _rowBg(uiStatus);
+    row.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
+  }
+
+  if (st) {
+    let html = badgeHtml;
+    if (uiStatus === '비정상') {
+      const reason = (row ? row.dataset.reason : '') || '';
+      const icon   = reason ? '사유' : '사유 입력';
+      html += ` <span class="reason-flag${reason ? '' : ' none'}" id="ddlrflag-${logId}" onclick="openReasonModal(${logId})" title="${reason || '사유 미입력'}">${icon}</span>`;
+    }
+    st.innerHTML = html;
+  }
+  if (clr) clr.style.display = isPending ? 'none' : '';
+  if (inp) {
+    inp.value = sr;
+    const [bg, bd] = _srInputColor(uiStatus);
+    inp.style.background  = bg;
+    inp.style.borderColor = bd;
+  }
+  _updateKpi();
+  applyFilters();
+}
+
+function _setPending(logId) {
+  const row = document.getElementById('ddlrow-'    + logId);
+  const st  = document.getElementById('ddlstatus-' + logId);
+  const clr = document.getElementById('ddlclr-'    + logId);
+  const inp = document.getElementById('ddlsr-'     + logId);
+
+  if (row) {
+    row.dataset.status   = '미적용';
+    row.style.background = '#fff5f5';
+    row.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
+  }
+  if (st)  st.innerHTML = '<span class="badge badge-bad">미적용</span>';
+  if (clr) clr.style.display = 'none';
+  if (inp) {
+    inp.value = '';
+    const [bg, bd] = _srInputColor('미적용');
+    inp.style.background  = bg;
+    inp.style.borderColor = bd;
+  }
+  _updateKpi();
+  applyFilters();
+}
+
+/* ── 편집 칼럼 저장 ── */
+async function saveDdlField(logId, field, value) {
+  try {
+    const r = await postJSON('/ddl/save-fields', { log_id: parseInt(logId), fields: { [field]: value } });
+    if (r._forbidden) return;
+    if (!r.ok) showToast('저장 실패', 'bad');
+  } catch (_) { showToast('저장 실패', 'bad'); }
+}
+
+/* ── 사유 모달 ── */
+let _reasonLogId = null;
+function openReasonModal(logId) {
+  _reasonLogId = logId;
+  const row    = document.getElementById('ddlrow-' + logId);
+  const reason = (row ? row.dataset.reason : '') || '';
+  document.getElementById('ddl-reason-text').value = reason;
+  document.getElementById('ddl-reason-modal').style.display = 'flex';
+  document.getElementById('ddl-reason-text').focus();
+}
+function closeReasonModal() {
+  document.getElementById('ddl-reason-modal').style.display = 'none';
+  _reasonLogId = null;
+}
+async function saveDdlReason() {
+  if (_reasonLogId === null) return;
+  const reason = document.getElementById('ddl-reason-text').value.trim();
+  const r = await postJSON('/ddl/save-reason', { log_id: parseInt(_reasonLogId), reason });
+  if (r.ok) {
+    const logId = _reasonLogId;
+    const row   = document.getElementById('ddlrow-' + logId);
+    if (row) {
+      row.dataset.reason = reason;
+      row.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
+    }
+    const flag = document.getElementById('ddlrflag-' + logId);
+    if (flag) {
+      flag.textContent = reason ? '사유' : '사유 입력';
+      flag.classList.toggle('none', !reason);
+      flag.title       = reason || '사유 미입력';
+    }
+    showToast(reason ? '사유가 저장되었습니다.' : '사유가 삭제되었습니다.', 'ok');
+    _updateKpi();
+    applyFilters();
+    closeReasonModal();
+  } else {
+    if (r._forbidden) return;
+    showToast(r.message || '저장 실패', 'bad');
+  }
+}
+
+/* ── 통합 필터 ── */
+function applyFilters() {
+  const kw      = (document.getElementById('ddl-search').value || '').toLowerCase();
+  const typeVal = (document.getElementById('ddl-type-filter').value || 'all');
+  const stVal   = (document.getElementById('ddl-status-filter').value || 'all');
+  const tbl     = document.getElementById('ddl-table');
+  if (!tbl) return;
+
+  let visible = 0;
+  tbl.querySelectorAll('tbody tr[data-status]').forEach(tr => {
+    const text    = tr.textContent.toLowerCase();
+    const rowType = tr.dataset.type || '';
+    const rowSt   = tr.dataset.status || '';
+    const show    =
+      (!kw      || text.includes(kw))           &&
+      (typeVal === 'all' || rowType === typeVal) &&
+      (stVal   === 'all' || rowSt   === stVal);
+    tr.style.display = show ? '' : 'none';
+    // 부모 행이 숨겨지면 세부 행도 닫음
+    const logId  = tr.id.replace('ddlrow-', '');
+    const detRow = document.getElementById('ddldet-' + logId);
+    if (detRow && !show) {
+      detRow.style.display = 'none';
+      const btn = document.getElementById('ddlexp-' + logId);
+      if (btn) btn.textContent = '쿼리';
+    }
+    if (show) visible++;
+  });
+  const cnt = document.getElementById('ddl-count');
+  if (cnt) cnt.textContent = `${visible}개 표시`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // SR 입력칸 Enter → 적용
+  document.querySelectorAll('.ddl-sr-input').forEach(inp => {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); applyDdlSr(inp.dataset.logId); }
+    });
+  });
+
+  // 편집칸 초기 색칠
+  document.querySelectorAll('.ddl-edit-inp').forEach(_paintEditInp);
+
+  // 편집칸 이벤트: 변경 시 저장
+  document.querySelectorAll('.ddl-edit-inp').forEach(inp => {
+    inp.addEventListener('focus', () => { inp.dataset.original = inp.value; });
+    inp.addEventListener('input', () => _paintEditInp(inp));
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    });
+    inp.addEventListener('blur', () => {
+      _paintEditInp(inp);
+      const cur = inp.value.trim();
+      if (cur !== (inp.dataset.original ?? '').trim()) {
+        saveDdlField(inp.dataset.logId, inp.dataset.field, cur);
+      }
+    });
+  });
+
+  // 사유 모달 ESC 닫기
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeReasonModal();
+  });
+
+  applyFilters();
+});
+</script>
+{% endblock %}

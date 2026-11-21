@@ -1,0 +1,94 @@
+/* ==========================================================
+   로그인 · 회원가입 — 그리드 작업형(D) 스타일
+   ========================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: #F3F3F4; color: #202124;
+  font-family: 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', sans-serif; font-size: 13px;
+}
+
+.login-wrap { width: 100%; max-width: 400px; padding: 16px; }
+.login-wrap.wide { max-width: 460px; }
+
+/* 창 형태의 카드: 회색 제목 줄 + 흰 본문 */
+.login-card { background: #FFFFFF; border: 1px solid #C3C7CD; }
+.login-header {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 0 16px; min-height: 40px;
+  background: #E6E7EA; border-bottom: 1px solid #C3C7CD;
+  margin-bottom: 0; text-align: left;
+}
+.login-logo { display: none; }
+.login-title { font-size: 14px; font-weight: 700; color: #202124; margin: 0; line-height: 40px; }
+.login-subtitle { font-size: 12px; color: #5F646C; }
+.login-body { padding: 18px 16px 16px; }
+
+.form-group { margin-bottom: 12px; }
+.form-label { display: block; font-size: 12px; font-weight: 700; color: #3C4047; margin-bottom: 4px; }
+.form-label .req { color: #B3300A; }
+.form-input {
+  width: 100%; height: 34px; padding: 0 10px;
+  font: inherit; font-size: 13px; color: #202124;
+  background: #FFFFFF; border: 1px solid #C3C7CD; border-radius: 2px; outline: none;
+}
+.form-input:focus { border-color: #0A5FB4; outline: 2px solid #0A5FB4; outline-offset: -1px; }
+.form-input::placeholder { color: #9AA0A8; }
+.form-input.is-invalid { border-color: #B3300A; background: #FFF8F6; }
+.form-input.is-valid   { border-color: #2E7D32; }
+
+.field-hint { font-size: 11.5px; margin-top: 4px; color: #5F646C; }
+.field-hint.error { color: #B3300A; }
+.field-hint.ok    { color: #2E7D32; }
+
+/* 알림 */
+.error-box, .alert-box {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 12px; margin-bottom: 12px;
+  font-size: 12.5px; border: 1px solid; border-left-width: 3px;
+}
+.error-box, .alert-box.error { background: #FDECE6; border-color: #F0B5A2; border-left-color: #B3300A; color: #B3300A; }
+.alert-box.success { background: #EEF6EE; border-color: #B9D8BA; border-left-color: #2E7D32; color: #2E7D32; }
+.error-icon, .alert-icon { display: none; }
+
+/* 버튼 */
+.btn-login, .btn-primary {
+  width: 100%; height: 36px; margin-top: 4px;
+  font: inherit; font-size: 13px; font-weight: 700; color: #FFFFFF;
+  background: #0A5FB4; border: 1px solid #0A5FB4; border-radius: 2px; cursor: pointer;
+}
+.btn-login:hover, .btn-primary:hover { background: #063F7A; border-color: #063F7A; }
+.btn-login:disabled, .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+.divider { border: none; border-top: 1px solid #E3E5E8; margin: 16px 0 12px; }
+
+/* 역할 안내 */
+.role-guide { display: flex; gap: 0; justify-content: center; flex-wrap: wrap; font-size: 12px; color: #5F646C; }
+.role-guide .role-badge { padding: 0 8px; border-left: 1px solid #E3E5E8; }
+.role-guide .role-badge:first-child { border-left: none; }
+.role-info-box { padding: 10px 12px; background: #F7F8FA; border: 1px solid #E3E5E8; }
+.role-info-box .role-fixed { font-size: 13px; font-weight: 700; color: #202124; margin-bottom: 4px; }
+.role-info-box .role-desc { font-size: 12px; color: #5F646C; line-height: 1.6; }
+.role-info-box .role-list { display: flex; flex-wrap: wrap; gap: 0; margin-top: 6px; font-size: 12px; color: #3C4047; }
+.role-chip { padding: 0 8px; border-left: 1px solid #C3C7CD; }
+.role-chip:first-child { padding-left: 0; border-left: none; }
+
+.back-link, .login-alt { text-align: center; font-size: 12.5px; color: #5F646C; margin-top: 12px; }
+.back-link a, .login-alt a { color: #0A5FB4; font-weight: 700; text-decoration: none; }
+.back-link a:hover, .login-alt a:hover { text-decoration: underline; }
+
+.login-footer { text-align: center; margin-top: 14px; font-size: 11.5px; color: #8A9098; }
+
+/* 스피너 */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle;
+  border: 2px solid rgba(255, 255, 255, .4); border-top-color: #FFFFFF; border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+
+/* 비밀번호 강도 */
+.pw-strength-bar { height: 4px; margin-top: 6px; background: #E3E5E8; overflow: hidden; }
+.pw-strength-fill { height: 100%; width: 0%; transition: width .3s, background .3s; }

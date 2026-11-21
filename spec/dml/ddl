@@ -1,0 +1,102 @@
+-- =========================================================
+-- DML 모니터링 모듈 DDL  (DB: PostgreSQL, schema: dml)
+-- ENUM 타입 미사용 — VARCHAR 컬럼으로 대체
+-- =========================================================
+-- 실행 순서:
+--   1. spec/program_change/ddl  (공통 함수 + program_change 스키마 테이블)
+--   2. 이 파일 (dml 스키마 테이블)
+-- 전제:
+--   - program_change.monitoring_period 존재
+--   - program_change.set_updated_at() 존재
+--   - program_change.guard_closed_period() 존재
+-- =========================================================
+
+CREATE SCHEMA IF NOT EXISTS dml;
+
+
+-- ── 1) db_user → 개발자 매핑 ──────────────────────────────
+CREATE TABLE dml.db_user_developer_map (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    system_code  VARCHAR(10) NOT NULL,
+    db_user      VARCHAR(50) NOT NULL,
+    developer_id BIGINT      NOT NULL,
+    -- developer_id: 추후 auth.app_user FK 추가 예정
+    CONSTRAINT uq_dbuser_map UNIQUE (system_code, db_user)
+);
+
+COMMENT ON TABLE  dml.db_user_developer_map             IS 'DB 계정 → 개발자 매핑 (DML 그룹 자동 분배)';
+COMMENT ON COLUMN dml.db_user_developer_map.system_code IS 'HR | EPRO | SR | PMS';
+COMMENT ON COLUMN dml.db_user_developer_map.db_user     IS 'DBSAFER 사용자명';
+
+
+-- ── 2) DML 그룹 ───────────────────────────────────────────
+CREATE TABLE dml.dml_group (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    period_id    BIGINT       NOT NULL,
+    system_code  VARCHAR(10)  NOT NULL,
+    base_time    TIMESTAMP    NOT NULL,
+    db_user      VARCHAR(50)  NOT NULL,
+    conn_account VARCHAR(50)  NOT NULL,
+    target_table VARCHAR(100) NOT NULL,
+    developer_id BIGINT,               -- 추후 auth.app_user FK 예정
+    row_count    INTEGER      NOT NULL DEFAULT 0,
+    sr_no        VARCHAR(30),
+    status       VARCHAR(10)  NOT NULL DEFAULT '미입력',  -- 미입력 | 적용됨
+    created_at   TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT fk_dmlg_period
+        FOREIGN KEY (period_id) REFERENCES program_change.monitoring_period(id)
+);
+
+CREATE TRIGGER trg_dml_group_updated
+    BEFORE UPDATE ON dml.dml_group
+    FOR EACH ROW EXECUTE FUNCTION program_change.set_updated_at();
+
+CREATE INDEX idx_dmlg_period_sys ON dml.dml_group (period_id, system_code);
+CREATE INDEX idx_dmlg_developer  ON dml.dml_group (developer_id, status);
+CREATE INDEX idx_dmlg_status     ON dml.dml_group (status);
+CREATE INDEX idx_dmlg_base_time  ON dml.dml_group (base_time);
+
+COMMENT ON TABLE  dml.dml_group           IS 'DML 그루핑 결과 (개발자별 SR 입력 단위)';
+COMMENT ON COLUMN dml.dml_group.base_time IS '그룹 첫 행 request_time (200초 시간윈도우 기준)';
+COMMENT ON COLUMN dml.dml_group.status    IS '미입력 | 적용됨';
+
+
+-- ── 3) DML 로그 (CSV 원본) ────────────────────────────────
+CREATE TABLE dml.dml_log (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    period_id     BIGINT       NOT NULL,
+    system_code   VARCHAR(10)  NOT NULL,
+    request_time  TIMESTAMP    NOT NULL,
+    db_user       VARCHAR(50)  NOT NULL,
+    conn_account  VARCHAR(50)  NOT NULL,
+    target_table  VARCHAR(100) NOT NULL,
+    query_summary TEXT,
+    group_id      BIGINT,
+    sr_no         VARCHAR(30),
+    status        VARCHAR(10)  NOT NULL DEFAULT '미입력',  -- 미입력 | 적용됨
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT fk_dml_period
+        FOREIGN KEY (period_id) REFERENCES program_change.monitoring_period(id),
+    CONSTRAINT fk_dml_group
+        FOREIGN KEY (group_id)  REFERENCES dml.dml_group(id)
+);
+
+CREATE INDEX idx_dml_period_sys ON dml.dml_log (period_id, system_code);
+CREATE INDEX idx_dml_request    ON dml.dml_log (request_time);
+CREATE INDEX idx_dml_group      ON dml.dml_log (group_id);
+CREATE INDEX idx_dml_grp_keys   ON dml.dml_log
+    (period_id, system_code, db_user, conn_account, target_table, request_time);
+
+COMMENT ON TABLE  dml.dml_log        IS 'DML 원본 로그 (DBSAFER CSV 적재)';
+COMMENT ON COLUMN dml.dml_log.status IS '미입력 | 적용됨';
+
+
+-- ── 4) 마감 회차 보호 트리거 ──────────────────────────────
+CREATE TRIGGER trg_guard_dml_log
+    BEFORE INSERT OR UPDATE OR DELETE ON dml.dml_log
+    FOR EACH ROW EXECUTE FUNCTION program_change.guard_closed_period();
+
+CREATE TRIGGER trg_guard_dml_group
+    BEFORE INSERT OR UPDATE OR DELETE ON dml.dml_group
+    FOR EACH ROW EXECUTE FUNCTION program_change.guard_closed_period();

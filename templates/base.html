@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{% endblock %} · 모니터링 시스템</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/monitor.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/img/monitor.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/img/monitor.png">
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block styles %}{% endblock %}
+</head>
+<body>
+  {% set role_names = {'operator': '운영자', 'developer': '개발자', 'reviewer': '검토자', 'viewer': '조회자'} %}
+
+  <header class="app-header">
+    <a class="app-title" href="/dashboard">모니터링 시스템</a>
+    <span class="app-sep"></span>
+    <span class="app-crumb">{{ self.title() }}</span>
+    {% if current_user is defined %}
+    <div class="app-user">
+      <span>{{ current_user.name }} <span class="role">({{ role_names.get(current_user.role, current_user.role) }})</span></span>
+      <a href="/change-password">비밀번호 변경</a>
+      <form method="post" action="/logout">
+        <button type="submit" class="link-btn">로그아웃</button>
+      </form>
+    </div>
+    {% endif %}
+  </header>
+
+  <nav class="menu" aria-label="주 메뉴">
+    <a href="/dashboard" class="{% if active=='dashboard' %}on{% endif %}">대시보드</a>
+    <a href="/program-change" class="{% if active=='program_change' %}on{% endif %}">프로그램변경</a>
+    <a href="/dept-transfer/daily" class="{% if active=='dept_transfer' %}on{% endif %}">부서이동자</a>
+    <a href="/dml/manager" class="{% if active in ['dml_manager','dml_developer'] %}on{% endif %}">데이터변경</a>
+    <a href="/ddl" class="{% if active=='ddl' %}on{% endif %}">프로시저</a>
+    {% if current_user is defined and current_user.role == 'operator' %}
+    <a href="/admin/users" class="{% if active=='admin_users' %}on{% endif %}">계정관리</a>
+    {% endif %}
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block scripts %}{% endblock %}
+
+  <script>
+    function showToast(msg, type = '') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.classList.add('show'), 10);
+      const duration = type === 'bad' ? 4000 : type === 'warn' ? 3500 : 2500;
+      setTimeout(() => {
+        el.classList.remove('show');
+        setTimeout(() => el.remove(), 300);
+      }, duration);
+    }
+
+    const PERM_DENIED_MSG = '권한이 부족합니다. 관리자에게 문의하세요.';
+
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.status === 403) {
+        showToast(data.message || PERM_DENIED_MSG, 'warn');
+        return { ok: false, _forbidden: true };
+      }
+      return data;
+    }
+
+    async function patchJSON(url, body) {
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.status === 403) {
+        showToast(data.message || PERM_DENIED_MSG, 'warn');
+        return { ok: false, _forbidden: true };
+      }
+      return data;
+    }
+    function confirmAction(msg) { return window.confirm(msg); }
+
+    function openQueryModal(q) {
+      document.getElementById('query-full-text').textContent = q || '';
+      document.getElementById('query-full-modal').style.display = 'flex';
+    }
+    function closeQueryModal() {
+      document.getElementById('query-full-modal').style.display = 'none';
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        const m = document.getElementById('query-full-modal');
+        if (m && m.style.display === 'flex') closeQueryModal();
+      }
+    });
+  </script>
+
+  <!-- 전체 쿼리 모달 (공통) -->
+  <div id="query-full-modal" class="reason-modal-backdrop" style="display:none;"
+       onclick="if(event.target===this)closeQueryModal()">
+    <div class="reason-modal" style="width:760px;">
+      <h3>전체 쿼리</h3>
+      <pre id="query-full-text" class="mono"
+           style="font-size:12px;white-space:pre-wrap;word-break:break-all;line-height:1.6;
+                  background:#F7F8FA;border:1px solid #E3E5E8;padding:12px;max-height:55vh;overflow-y:auto;"></pre>
+      <div class="reason-modal-actions">
+        <button class="btn" onclick="closeQueryModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

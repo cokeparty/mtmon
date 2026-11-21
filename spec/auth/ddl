@@ -1,0 +1,33 @@
+-- =========================================================
+-- 인증 모듈 DDL  (DB: PostgreSQL, schema: auth)
+-- ENUM 타입 미사용 — VARCHAR 컬럼으로 대체
+-- =========================================================
+
+CREATE SCHEMA IF NOT EXISTS auth;
+
+
+-- ── app_user ──────────────────────────────────────────────
+CREATE TABLE auth.app_user (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    login_id      VARCHAR(50)  NOT NULL,
+    name          VARCHAR(50)  NOT NULL,
+    password_hash VARCHAR(200) NOT NULL,   -- bcrypt 해시
+    email         VARCHAR(100),
+    role          VARCHAR(20)  NOT NULL,   -- manager | developer
+    active        BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT uq_user_login UNIQUE (login_id)
+);
+
+CREATE INDEX idx_user_login ON auth.app_user (login_id);
+CREATE INDEX idx_user_role  ON auth.app_user (role) WHERE active = TRUE;
+
+COMMENT ON TABLE  auth.app_user               IS '대시보드 사용자 (담당자/개발자)';
+COMMENT ON COLUMN auth.app_user.role          IS 'operator=운영자, developer=개발자, reviewer=검토수행자';
+COMMENT ON COLUMN auth.app_user.password_hash IS 'bcrypt 해시 — 평문 저장 금지';
+COMMENT ON COLUMN auth.app_user.active        IS 'FALSE = 비활성, 로그인 차단';
+
+
+-- ── 초기 관리자 계정 (비밀번호 해시는 별도로 생성해서 교체) ──
+-- INSERT INTO auth.app_user (login_id, name, password_hash, role)
+-- VALUES ('admin', '시스템관리자', '$2b$12$...', 'manager');
