@@ -33,6 +33,7 @@
                 border: 1px solid var(--line); border-radius: 2px; font-size: 11.5px; font-weight: 700;
                 background: var(--hdr); color: var(--ink-2); }
   .role-operator { color: var(--accent-dk); background: #E8F1FB; border-color: #9CC0E6; }
+  .role-administrator { color: #FFFFFF; background: var(--ink-2); border-color: var(--ink-2); }
   .status-active   { color: var(--ok); font-weight: 700; }
   .status-inactive { color: #9AA0A8; }
 
@@ -127,7 +128,7 @@
           <!-- 이름 -->
           <td data-v="{{ u.name }}">
             <span class="cell-view" id="name-view-{{ u.id }}">{{ u.name }}</span>
-            {% if u.id != current_user.id %}
+            {% if u.id != current_user.id and u.role != admin_role %}
             <input id="name-input-{{ u.id }}"
                    type="text" value="{{ u.name }}"
                    class="row-edit-input edit-input" style="display:none;" maxlength="50"
@@ -138,7 +139,7 @@
           <!-- 이메일 -->
           <td data-v="{{ u.email or '' }}">
             <span class="cell-view" id="email-view-{{ u.id }}" data-raw="{{ u.email or '' }}">{{ u.email or '—' }}</span>
-            {% if u.id != current_user.id %}
+            {% if u.id != current_user.id and u.role != admin_role %}
             <input id="email-input-{{ u.id }}"
                    type="email" value="{{ u.email or '' }}"
                    class="row-edit-input edit-input" style="display:none;" maxlength="100" placeholder="이메일 없음"
@@ -147,7 +148,7 @@
           </td>
 
           <td>
-            <span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span>
+            <span class="role-badge role-{{ u.role }}">{{ role_names.get(u.role, u.role) }}</span>
           </td>
           <td>
             {% if u.active %}
@@ -166,7 +167,7 @@
           <!-- 관리 -->
           {% if can_edit %}
           <td>
-            {% if u.id != current_user.id %}
+            {% if u.id != current_user.id and u.role != admin_role %}
             <div class="action-group">
               <form method="post" action="/account/{{ u.id }}/role" style="display:flex;gap:4px;">
                 <select name="role">

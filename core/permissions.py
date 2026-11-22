@@ -26,6 +26,10 @@ from db.database import get_db
 PERM_DENIED_MSG = "권한이 부족합니다. 관리자에게 문의하세요."
 
 LEVEL_NONE, LEVEL_VIEW, LEVEL_EDIT = 0, 1, 2
+
+# 관리자 역할 — 항상 모든 권한. 앱(역할관리·계정관리)에서 보이지 않고 부여·수정·삭제 불가.
+# 계정에 주는 방법은 DB 직접 입력뿐:  UPDATE account.app_user SET role='administrator' WHERE login_id='...';
+ADMIN_ROLE = "administrator"
 LEVEL_LABELS = {LEVEL_NONE: "접속 불가", LEVEL_VIEW: "조회", LEVEL_EDIT: "수정"}
 
 # (페이지 코드, 이름, 주소) — 메뉴 순서
@@ -51,6 +55,8 @@ class ApiForbidden(Exception):
 def load_perms(db: Session, role: str) -> dict[str, int]:
     """역할의 페이지별 권한 레벨 {page_code: level}. 없는 페이지는 0."""
     from models.account import RolePermission
+    if role == ADMIN_ROLE:
+        return {p: LEVEL_EDIT for p in PAGE_CODES}
     perms = {p: LEVEL_NONE for p in PAGE_CODES}
     for rp in db.query(RolePermission).filter(RolePermission.role_code == role).all():
         if rp.page_code in perms:

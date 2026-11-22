@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from core.permissions import (LEVEL_EDIT, LEVEL_LABELS, LEVEL_NONE, LEVEL_VIEW, PAGES,
+from core.permissions import (ADMIN_ROLE, LEVEL_EDIT, LEVEL_LABELS, LEVEL_NONE, LEVEL_VIEW, PAGES,
                               page_edit, page_view)
 from core.web import render
 from db.database import get_db
@@ -36,7 +36,8 @@ def _flash(request: Request, msg: str, kind: str = "ok") -> RedirectResponse:
 @router.get("", response_class=HTMLResponse)
 def role_page(request: Request, db: Session = Depends(get_db),
               current_user=Depends(page_view("role"))):
-    roles = db.query(Role).order_by(Role.sort_order, Role.code).all()
+    roles = (db.query(Role).filter(Role.code != ADMIN_ROLE)       # 관리자 역할은 화면에 보이지 않음
+             .order_by(Role.sort_order, Role.code).all())
     counts = dict(db.query(AppUser.role, func.count(AppUser.id)).group_by(AppUser.role).all())
     perms: dict[str, dict[str, int]] = {r.code: {} for r in roles}
     for rp in db.query(RolePermission).all():
@@ -65,7 +66,7 @@ def role_create(request: Request, code: str = Form(...), name: str = Form(...),
         return _flash(request, "역할 코드는 영문 소문자로 시작하는 영문 소문자·숫자·_ 2~20자입니다.", "err")
     if not name:
         return _flash(request, "역할 이름을 입력해주세요.", "err")
-    if db.get(Role, code):
+    if code == ADMIN_ROLE or db.get(Role, code):
         return _flash(request, f"이미 있는 역할 코드입니다: {code}", "err")
     if db.query(Role).filter(Role.name == name).first():
         return _flash(request, f"이미 있는 역할 이름입니다: {name}", "err")
@@ -80,7 +81,7 @@ def role_update(code: str, request: Request, name: str = Form(...),
                 description: str = Form(default=""), sort_order: int = Form(default=100),
                 db: Session = Depends(get_db), _u=Depends(page_edit("role"))):
     role = db.get(Role, code)
-    if not role:
+    if not role or code == ADMIN_ROLE:
         return _flash(request, "없는 역할입니다.", "err")
     name = name.strip()
     if not name:
@@ -97,7 +98,7 @@ def role_update(code: str, request: Request, name: str = Form(...),
 def role_delete(code: str, request: Request, db: Session = Depends(get_db),
                 current_user=Depends(page_edit("role"))):
     role = db.get(Role, code)
-    if not role:
+    if not role or code == ADMIN_ROLE:
         return _flash(request, "없는 역할입니다.", "err")
     if code == REGISTER_ROLE:
         return _flash(request, f"'{role.name}' 은(는) 회원가입 시 부여하는 기본 역할이라 삭제할 수 없습니다.", "err")
@@ -115,7 +116,7 @@ async def save_permissions(request: Request, db: Session = Depends(get_db),
                            current_user=Depends(page_edit("role"))):
     """폼 값 perm__{역할코드}__{페이지코드} = 0/1/2 를 한 번에 저장."""
     form = await request.form()
-    roles = {r.code for r in db.query(Role).all()}
+    roles = {r.code for r in db.query(Role).all()} - {ADMIN_ROLE}   # 관리자 권한은 바꿀 수 없음
     pages = {c for c, _, _ in PAGES}
     wanted: dict[tuple[str, str], int] = {}
     for key, val in form.items():
@@ -131,7 +132,7 @@ async def save_permissions(request: Request, db: Session = Depends(get_db),
 
     # 자기 역할에서 역할관리 수정 권한을 없애면 이 화면을 다시 못 고친다 → 막는다
     my_role = getattr(current_user, "role", "")
-    if wanted.get((my_role, "role"), LEVEL_EDIT) < LEVEL_EDIT:
+    if my_role != ADMIN_ROLE and wanted.get((my_role, "role"), LEVEL_EDIT) < LEVEL_EDIT:
         return _flash(request, "본인 역할의 '역할관리' 수정 권한은 없앨 수 없습니다 "
                                "(저장하면 이 화면을 다시 고칠 수 없게 됩니다). 다른 운영자 계정에서 바꾸세요.", "err")
 

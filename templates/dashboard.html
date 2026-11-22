@@ -4,12 +4,21 @@
 {% block content %}
 {% set k = kpi %}
 {% set rows = [
-  ('프로그램 변경',    k.program_change.normal, k.program_change.abnormal, k.program_change.pending, k.program_change.total, k.program_change.progress, '/program'),
-  ('부서이동자',       k.dept_transfer.applied, None,                       k.dept_transfer.pending,  k.dept_transfer.total,  k.dept_transfer.progress,  '/depart'),
-  ('데이터변경 (DML)', k.dml.normal,            k.dml.abnormal,             k.dml.pending,            k.dml.total,            k.dml.progress,            '/dml/manager'),
-  ('프로시저 (DDL)',   k.ddl.normal,            k.ddl.abnormal,             k.ddl.pending,            k.ddl.total,            k.ddl.progress,            '/ddl')
+  ('프로그램 변경',    k.program_change.normal, k.program_change.abnormal, k.program_change.pending, k.program_change.total, k.program_change.progress, '/program',     k.program_change.no_reason),
+  ('부서이동자',       k.dept_transfer.applied, None,                       k.dept_transfer.pending,  k.dept_transfer.total,  k.dept_transfer.progress,  '/depart',      0),
+  ('데이터변경 (DML)', k.dml.normal,            k.dml.abnormal,             k.dml.pending,            k.dml.total,            k.dml.progress,            '/dml/manager', k.dml.no_reason),
+  ('프로시저 (DDL)',   k.ddl.normal,            k.ddl.abnormal,             k.ddl.pending,            k.ddl.total,            k.ddl.progress,            '/ddl',         k.ddl.no_reason)
 ] %}
-{% set done_total = status_dist['정상'] + status_dist['비정상'] %}
+{% set todo = [
+  ('프로그램 변경', '미적용',           k.program_change.pending,   '/program',     'program'),
+  ('프로그램 변경', '비정상 사유 미입력', k.program_change.no_reason, '/program',     'program'),
+  ('부서이동자',    '미적용 (SR 미처리)', k.dept_transfer.pending,    '/depart',      'depart_monthly'),
+  ('데이터변경',    '미적용',           k.dml.pending,              '/dml/manager', 'dml_manager'),
+  ('데이터변경',    '비정상 사유 미입력', k.dml.no_reason,            '/dml/manager', 'dml_manager'),
+  ('프로시저',      '미적용',           k.ddl.pending,              '/ddl',         'ddl'),
+  ('프로시저',      '비정상 사유 미입력', k.ddl.no_reason,            '/ddl',         'ddl'),
+] %}
+{% set todo_total = todo | sum(attribute=2) %}
 {% set overall = ((done_total / status_total * 100) | round(1)) if status_total else 0 %}
 
 <!-- 툴바 -->
@@ -29,7 +38,7 @@
   <div class="card">
     <div class="card-title">점검 대상</div>
     <div class="card-num">{{ status_total }}</div>
-    <div class="card-sub">4개 모듈 합산</div>
+    <div class="card-sub">4개 모니터링 합산</div>
   </div>
   <div class="card">
     <div class="card-title">처리율</div>
@@ -42,9 +51,9 @@
     <div class="card-sub">{{ status_pct['정상'] }}%</div>
   </div>
   <div class="card caution">
-    <div class="card-title">비정상 (사유 작성)</div>
+    <div class="card-title">비정상</div>
     <div class="card-num">{{ status_dist['비정상'] }}</div>
-    <div class="card-sub">{{ status_pct['비정상'] }}%</div>
+    <div class="card-sub">{{ status_pct['비정상'] }}% · 사유 미입력 {{ no_reason_total }}</div>
   </div>
   <div class="card warn">
     <div class="card-title">미적용</div>
@@ -58,58 +67,67 @@
 
   <!-- 요약 -->
   <div class="sheet-page" data-sheet="sum">
-    <div class="sheet-grid">
-      <section class="section">
-        <h3>모듈별 처리 현황 <span class="cap-note">처리율 = (정상 + 비정상) / 전체</span></h3>
-        <div style="overflow-x:auto;">
-          <table class="g">
-            <thead>
-              <tr><th>모듈</th><th class="num">정상</th><th class="num">비정상</th><th class="num">미적용</th><th class="num">전체</th><th style="width:34%;">처리율</th></tr>
-            </thead>
-            <tbody>
-              {% for name, ok, abn, pend, tot, prog, href in rows %}
-              <tr>
-                <td class="rh"><a href="{{ href }}">{{ name }}</a></td>
-                <td class="num">{{ ok }}</td>
-                <td class="num">{% if abn is none %}<span class="td-empty">—</span>{% else %}{{ abn }}{% endif %}</td>
-                <td class="num {% if pend %}cell-bad{% endif %}">{{ pend }}</td>
-                <td class="num">{{ tot }}</td>
-                <td class="bar-cell"><div class="databar {% if prog >= 100 %}full{% endif %}" style="width:{{ prog }}%;"></div><span>{{ prog }}%</span></td>
-              </tr>
-              {% endfor %}
-              <tr class="tot">
-                <td>합계</td>
-                <td class="num">{{ status_dist['정상'] }}</td>
-                <td class="num">{{ status_dist['비정상'] }}</td>
-                <td class="num {% if status_dist['미적용'] %}cell-bad{% endif %}">{{ status_dist['미적용'] }}</td>
-                <td class="num">{{ status_total }}</td>
-                <td class="mono">{{ overall }}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section">
-        <h3>조치 필요 항목</h3>
+    <section class="section">
+      <h3>모니터링별 처리 현황 <span class="cap-note">처리율 = (정상 + 사유를 입력한 비정상) / 전체</span></h3>
+      <div style="overflow-x:auto;">
         <table class="g">
-          <thead><tr><th>항목</th><th class="num" style="width:70px;">건수</th><th style="width:60px;">이동</th></tr></thead>
+          <thead>
+            <tr><th>모니터링</th><th class="num">정상</th><th class="num">비정상</th><th class="num">미적용</th><th class="num">전체</th><th style="width:34%;">처리율</th></tr>
+          </thead>
           <tbody>
-            <tr><td>프로그램 변경 미적용</td><td class="num {% if k.program_change.pending %}cell-bad{% endif %}">{{ k.program_change.pending }}</td><td><a href="/program">열기</a></td></tr>
-            <tr><td>데이터변경 SR 미입력</td><td class="num {% if k.dml.pending %}cell-bad{% endif %}">{{ k.dml.pending }}</td><td><a href="/dml/manager">열기</a></td></tr>
-            <tr><td>부서이동자 미처리</td><td class="num {% if k.dept_transfer.pending %}cell-bad{% endif %}">{{ k.dept_transfer.pending }}</td><td><a href="/depart">열기</a></td></tr>
-            <tr><td>프로시저 미적용</td><td class="num {% if k.ddl.pending %}cell-bad{% endif %}">{{ k.ddl.pending }}</td><td><a href="/ddl">열기</a></td></tr>
-            <tr><td>비정상 건 (사유 확인)</td><td class="num {% if status_dist['비정상'] %}cell-warn{% endif %}">{{ status_dist['비정상'] }}</td><td><a href="/program">열기</a></td></tr>
+            {% for name, ok, abn, pend, tot, prog, href, nr in rows %}
+            <tr>
+              <td class="rh"><a href="{{ href }}">{{ name }}</a></td>
+              <td class="num">{{ ok }}</td>
+              <td class="num">{% if abn is none %}<span class="td-empty">—</span>{% else %}{{ abn }}{% if nr %} <span class="nr">(사유 미입력 {{ nr }})</span>{% endif %}{% endif %}</td>
+              <td class="num {% if pend %}cell-bad{% endif %}">{{ pend }}</td>
+              <td class="num">{{ tot }}</td>
+              <td class="bar-cell"><div class="databar {% if prog >= 100 %}full{% endif %}" style="width:{{ prog }}%;"></div><span>{{ prog }}%</span></td>
+            </tr>
+            {% endfor %}
+            <tr class="tot">
+              <td>합계</td>
+              <td class="num">{{ status_dist['정상'] }}</td>
+              <td class="num">{{ status_dist['비정상'] }}{% if no_reason_total %} <span class="nr">(사유 미입력 {{ no_reason_total }})</span>{% endif %}</td>
+              <td class="num {% if status_dist['미적용'] %}cell-bad{% endif %}">{{ status_dist['미적용'] }}</td>
+              <td class="num">{{ status_total }}</td>
+              <td class="mono">{{ overall }}%</td>
+            </tr>
           </tbody>
         </table>
-      </section>
-    </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 조치 필요 -->
+  <div class="sheet-page" data-sheet="todo" hidden>
+    <section class="section">
+      <h3>조치 필요 항목 <span class="cap-note">미적용 · 비정상인데 사유 미입력</span></h3>
+      <table class="g">
+        <thead><tr><th>모니터링</th><th>항목</th><th class="num" style="width:70px;">건수</th><th style="width:60px;">이동</th></tr></thead>
+        <tbody>
+          {% for mod, what, cnt, href, page in todo %}
+          <tr>
+            <td>{{ mod }}</td>
+            <td>{{ what }}</td>
+            <td class="num {% if cnt %}{{ 'cell-bad' if what.startswith('미적용') else 'cell-warn' }}{% endif %}">{{ cnt }}</td>
+            <td>{% if perms.get(page, 0) >= 1 %}<a href="{{ href }}">열기</a>{% else %}<span class="td-empty">—</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          <tr class="tot">
+            <td colspan="2">합계</td>
+            <td class="num">{{ todo_total }}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </div>
 
   <!-- 시스템별 -->
   <div class="sheet-page" data-sheet="sys" hidden>
     <section class="section">
-      <h3>시스템 × 모듈 건수</h3>
+      <h3>시스템 × 모니터링 건수</h3>
       <div style="overflow-x:auto;">
         <table class="g">
           <thead>
@@ -138,6 +156,7 @@
   <!-- 시트 탭 -->
   <div class="sheet-tabs" role="tablist" aria-label="보기">
     <button type="button" role="tab" class="on" data-target="sum">요약</button>
+    <button type="button" role="tab" data-target="todo">조치 필요<span class="cnt{% if todo_total %} bad{% endif %}">{{ todo_total }}</span></button>
     <button type="button" role="tab" data-target="sys">시스템별</button>
   </div>
 </div>
@@ -156,7 +175,6 @@
 <style>
   .sheet { background: #FFFFFF; border: 1px solid var(--line); border-bottom: none; padding: 10px 10px 0; }
   .sheet .section { margin-bottom: 10px; }
-  .sheet-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 10px; align-items: start; }
   .cap-note { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 12px; }
   .sheet .section > h3 { margin-bottom: 0; }
   .sheet .section > div, .sheet .section > table { margin: 0; }
@@ -166,6 +184,7 @@
   .g td.rh { background: #FAFAFB; font-weight: 700; }
   .g tr.tot td { background: var(--hdr); font-weight: 700; border-top: 1px solid #9AA0A8; }
   .cell-bad  { color: var(--bad);  font-weight: 700; background: #FDECE6 !important; }
+  .nr { color: var(--warn); font-size: 11.5px; font-weight: 400; }
   .cell-warn { color: var(--warn); font-weight: 700; background: #FFF5DA !important; }
 
   .bar-cell { position: relative; padding: 0 !important; }
@@ -182,8 +201,8 @@
   }
   .sheet-tabs button.on { background: #FFFFFF; color: var(--ink); font-weight: 700; box-shadow: inset 0 -2px 0 var(--accent); }
   .sheet-tabs .cnt { font-family: var(--mono); color: var(--muted); margin-left: 4px; }
+  .sheet-tabs .cnt.bad { color: var(--bad); font-weight: 700; }
 
-  @media (max-width: 900px) { .sheet-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 

@@ -14,17 +14,6 @@
 <div class="flash {{ flash_type }}">{{ flash }}</div>
 {% endif %}
 
-<div class="section">
-  <h3>권한 설명</h3>
-  <table class="data-table legend-table">
-    <tbody>
-      <tr><td class="lv lv-0">접속 불가</td><td>메뉴에 보이지 않고, 주소로 들어와도 막힙니다.</td></tr>
-      <tr><td class="lv lv-1">조회</td><td>화면을 볼 수 있지만 SR 입력 · 유지/회수 · CSV 업로드 · 배치 실행 같은 입력·수정은 할 수 없습니다.</td></tr>
-      <tr><td class="lv lv-2">수정</td><td>그 페이지의 모든 기능을 쓸 수 있습니다.</td></tr>
-    </tbody>
-  </table>
-</div>
-
 <!-- 권한표: 행 = 페이지, 열 = 역할 -->
 <form method="post" action="/role/permissions" class="section" id="perm-form">
   <h3>페이지 권한표
@@ -36,7 +25,7 @@
         <tr>
           <th style="width:220px;">페이지</th>
           {% for r in roles %}
-          <th class="role-col">{{ r.name }}<div class="code">{{ r.code }} · {{ user_counts.get(r.code, 0) }}명</div></th>
+          <th class="role-col">{{ r.name }}</th>
           {% endfor %}
         </tr>
       </thead>
@@ -137,8 +126,6 @@
   .flash.ok  { background: #EEF6EE; color: var(--ok);  border-color: #B9D8BA; border-left-color: var(--ok); }
   .flash.err { background: #FDECE6; color: var(--bad); border-color: #F0B5A2; border-left-color: var(--bad); }
   .section > form, .section > table, .section > div { margin: 0; }
-  .legend-table { width: auto; }
-  .legend-table td { white-space: normal; }
   .perm-table { width: auto; min-width: 100%; }
   .perm-table th.role-col { text-align: center; min-width: 120px; }
   .perm-table td.cell { text-align: center; }

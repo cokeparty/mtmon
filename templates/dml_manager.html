@@ -55,22 +55,22 @@
   </div>
   <div class="card ok">
     <div class="card-title">적용 완료</div>
-    <div class="card-num">{{ summary.applied_groups | default(0) }}</div>
+    <div class="card-num" id="kpi-applied">{{ summary.applied_groups | default(0) }}</div>
   </div>
   <div class="card caution">
     <div class="card-title">사유미입력</div>
-    <div class="card-num">{{ summary.no_reason_groups | default(0) }}</div>
+    <div class="card-num" id="kpi-no-reason">{{ summary.no_reason_groups | default(0) }}</div>
     <div class="card-sub">비정상 + 소명 없음</div>
   </div>
   <div class="card warn">
     <div class="card-title">미적용</div>
-    <div class="card-num">{{ summary.pending_groups | default(0) }}</div>
+    <div class="card-num" id="kpi-pending">{{ summary.pending_groups | default(0) }}</div>
   </div>
   <div class="card">
     <div class="card-title">진행률</div>
-    <div class="card-num">{{ summary.progress_pct | default(0) }}%</div>
+    <div class="card-num" id="kpi-pct">{{ summary.progress_pct | default(0) }}%</div>
     <div class="progress-wrap" style="margin-top:6px;">
-      <div class="progress-bar"
+      <div class="progress-bar" id="kpi-bar"
            style="width:{{ summary.progress_pct | default(0) }}%;"></div>
     </div>
   </div>
@@ -527,6 +527,7 @@ function _mgrSetApplied(groupId, sr, uiStatus, grp) {
   else                       badgeHtml = '<span class="badge badge-warn">비정상</span>';
 
   if (row) { row.dataset.status = uiStatus; row.style.background = _mgrRowBg(uiStatus); }
+  _mgrUpdateKpi();
 
   if (st) {
     st.dataset.v = uiStatus;
@@ -563,6 +564,25 @@ function _mgrSetApplied(groupId, sr, uiStatus, grp) {
   setCell(`msr-close-${groupId}`,  grp.close_date || '');
 }
 
+/* 상단 KPI 다시 계산 (서버 get_manager_view 와 같은 기준)
+   적용 완료 = 전체 − 미적용 − 사유미입력.  비DML 그룹은 적용 완료로 본다.
+   비정상이라도 사유를 입력하면 적용 완료 → 진행률이 오른다. */
+function _mgrUpdateKpi() {
+  const rows = document.querySelectorAll('#group-table tbody tr[id^="mrow-"]');
+  let total = 0, pending = 0, noReason = 0;
+  rows.forEach(r => {
+    total++;
+    if (r.dataset.isDml === 'false') return;
+    if (r.dataset.status === '미적용') pending++;
+    else if (r.dataset.status === '비정상' && !(r.dataset.reason || '').trim()) noReason++;
+  });
+  const applied = total - pending - noReason;
+  const pct = total ? Math.round(applied / total * 100) : 0;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('kpi-applied', applied); set('kpi-no-reason', noReason); set('kpi-pending', pending); set('kpi-pct', pct + '%');
+  const bar = document.getElementById('kpi-bar'); if (bar) bar.style.width = pct + '%';
+}
+
 function _mgrSetPending(groupId) {
   const row = document.getElementById('mrow-'    + groupId);
   const st  = document.getElementById('mstatus-' + groupId);
@@ -570,6 +590,7 @@ function _mgrSetPending(groupId) {
   const inp = document.getElementById('msr-'     + groupId);
 
   if (row) { row.dataset.status = '미적용'; row.style.background = '#fff5f5'; }
+  _mgrUpdateKpi();
   if (st)  { st.innerHTML = '<span class="badge badge-bad">미적용</span>'; st.dataset.v = '미적용'; }
   if (clr) clr.style.display = 'none';
   if (inp) {
@@ -644,6 +665,7 @@ async function mgrToggleDml(groupId, isDml) {
     const uiStatus = r.group ? r.group.ui_status : '정상';
     _mgrSetApplied(groupId, r.group ? (r.group.sr_no || '') : '', uiStatus, r.group || {});
 
+    _mgrUpdateKpi();
     showToast(isDml ? 'DML로 변경되었습니다.' : '비DML로 표시되었습니다.', 'ok');
   } else {
     showToast(r.message || '변경 실패', 'bad');
@@ -681,6 +703,7 @@ async function mgrSaveReason() {
   if (r.ok) {
     const row = document.getElementById('mrow-' + groupId);
     if (row) row.dataset.reason = reason;
+    _mgrUpdateKpi();
     const flag = document.getElementById('mrflag-' + groupId);
     if (flag) { flag.textContent = reason ? '사유' : '사유 입력'; flag.title = reason || '사유 미입력'; flag.classList.toggle('none', !reason); }
     showToast(reason ? '사유가 저장되었습니다.' : '사유가 삭제되었습니다.', 'ok');

@@ -169,20 +169,6 @@
 <div class="db-error-banner">DB 연결 실패 — 서버에 접속할 수 없습니다.</div>
 {% endif %}
 
-<!-- KPI -->
-<div class="card-grid">
-  <div class="card">
-    <div class="card-title">전체</div>
-    <div class="card-num">{{ summary.total | default(0) }}</div>
-    <div class="card-sub">오늘 기준 누적</div>
-  </div>
-  <div class="card {% if summary.pending > 0 %}warn{% else %}ok{% endif %}" id="kpi-pending-card">
-    <div class="card-title">미처리 (권한건)</div>
-    <div class="card-num" id="kpi-pending">{{ summary.pending | default(0) }}</div>
-    <div class="card-sub">HR·전자조달·PMS 중 유지/회수 미결정</div>
-  </div>
-</div>
-
 <!-- 탭 (건수 · 미처리 건수 표시) — 선택한 탭은 주소(?tab=)에 남아 새로고침해도 유지 -->
 <div class="tabs" id="dailyTabs">
   {% for key, label, rows in [('all','전체',records),('resign','퇴직자',_resign),('dept','부서변경자',_dept),

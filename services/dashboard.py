@@ -2,9 +2,9 @@
 """
 통합 대시보드 집계 로직.
 
-프로그램변경 · 부서이동자 · DML · DDL 4개 모듈의 KPI/상태를 한 화면용으로 모은다.
+프로그램변경 · 부서이동자 · DML · DDL 4개 모니터링의 KPI/상태를 한 화면용으로 모은다.
 기존 서비스(get_manager_view / get_view / get_monthly_summary)와
-program.view.row_ui_status 를 그대로 재사용하며, 모듈별로 OperationalError를
+program.view.row_ui_status 를 그대로 재사용하며, 모니터링별로 OperationalError를
 독립적으로 처리해 일부 DB 장애가 전체 화면을 막지 않도록 한다.
 
 엑셀 출력 등은 대시보드 범위 밖(조회 전용).
@@ -36,6 +36,8 @@ def _empty_module() -> dict[str, Any]:
         "progress": 0,
         "status": {"정상": 0, "비정상": 0, "미적용": 0},
         "by_system": {s: 0 for s in SYSTEMS},
+        "no_reason": 0,          # 비정상인데 사유를 아직 안 쓴 건 (조치 필요)
+        "done": 0,               # 처리 완료 = 정상 + 사유를 입력한 비정상
     }
 
 
@@ -48,7 +50,7 @@ def _fmt_time(v) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# 모듈별 집계
+# 모니터링별 집계
 # ──────────────────────────────────────────────────────────────
 def _pc_summary(db: Session, ym: str) -> dict:
     out = _empty_module()
@@ -70,9 +72,13 @@ def _pc_summary(db: Session, ym: str) -> dict:
                 out["total"] += 1
                 if st == "정상":
                     ok_count += 1
-                elif st == "비정상" and is_user_reason(r.reason):
-                    ok_count += 1
+                elif st == "비정상":
+                    if is_user_reason(r.reason):
+                        ok_count += 1
+                    else:
+                        out["no_reason"] += 1
         # 진행률 = (정상 + 비정상(사유 작성)) / 전체
+        out["done"] = ok_count
         out["progress"] = round(ok_count / out["total"] * 100) if out["total"] else 0
     except OperationalError:
         pass
@@ -93,9 +99,13 @@ def _dml_summary(db: Session, ym: str) -> dict:
                 out["status"][st] = out["status"].get(st, 0) + 1
                 if st == "정상":
                     ok_count += 1
-                elif st == "비정상" and g.get("reason"):
-                    ok_count += 1
+                elif st == "비정상":
+                    if g.get("reason"):
+                        ok_count += 1
+                    else:
+                        out["no_reason"] += 1
         # 진행률 = (정상 + 비정상(사유 작성)) / 전체
+        out["done"] = ok_count
         out["progress"] = round(ok_count / out["total"] * 100) if out["total"] else 0
     except OperationalError:
         pass
@@ -116,9 +126,13 @@ def _ddl_summary(db: Session, ym: str) -> dict:
                 out["status"][st] = out["status"].get(st, 0) + 1
                 if st == "정상":
                     ok_count += 1
-                elif st == "비정상" and l.get("ddl_reason"):
-                    ok_count += 1
+                elif st == "비정상":
+                    if l.get("ddl_reason"):
+                        ok_count += 1
+                    else:
+                        out["no_reason"] += 1
         # 진행률 = (정상 + 비정상(사유 작성)) / 전체
+        out["done"] = ok_count
         out["progress"] = round(ok_count / out["total"] * 100) if out["total"] else 0
     except OperationalError:
         pass
@@ -128,7 +142,7 @@ def _ddl_summary(db: Session, ym: str) -> dict:
 def _dt_summary(db: Session, ym: str) -> dict:
     """부서이동자: 권한(HR/PMS/EPRO) 기준 total·미적용·진행률."""
     out = {
-        "total": 0, "pending": 0, "applied": 0, "progress": 0,
+        "total": 0, "pending": 0, "applied": 0, "progress": 0, "done": 0, "no_reason": 0,
         "by_system": {s: 0 for s in SYSTEMS},
         "status": {"정상": 0, "비정상": 0, "미적용": 0},
     }
@@ -141,7 +155,7 @@ def _dt_summary(db: Session, ym: str) -> dict:
             out["pending"] += cell.get("pending", 0)
             if sc in out["by_system"]:
                 out["by_system"][sc] = cell.get("total", 0)
-        out["applied"] = out["total"] - out["pending"]
+        out["applied"] = out["done"] = out["total"] - out["pending"]
         out["progress"] = kpi.get("progress", 0)
         out["status"]["정상"] = out["applied"]
         out["status"]["미적용"] = out["pending"]
@@ -180,6 +194,9 @@ def get_dashboard_data(db: Session, year_month: str) -> dict:
         for k in status_dist:
             status_dist[k] += m["status"][k]
     sd_total = sum(status_dist.values())
+    # 전체 처리율도 모니터링별과 같은 기준: (정상 + 사유를 입력한 비정상) / 전체
+    done_total = sum(m["done"] for m in (pc, dt, dml, ddl))
+    no_reason_total = sum(m["no_reason"] for m in (pc, dt, dml, ddl))
     status_pct = {
         k: (round(v / sd_total * 100) if sd_total else 0)
         for k, v in status_dist.items()
@@ -209,6 +226,7 @@ def get_dashboard_data(db: Session, year_month: str) -> dict:
                 "normal": pc["status"]["정상"],
                 "abnormal": pc["status"]["비정상"],
                 "pending": pc["status"]["미적용"],
+                "no_reason": pc["no_reason"],
                 "progress": pc["progress"],
             },
             "dept_transfer": {
@@ -220,6 +238,7 @@ def get_dashboard_data(db: Session, year_month: str) -> dict:
                 "normal": dml["status"]["정상"],
                 "pending": dml["status"]["미적용"],
                 "abnormal": dml["status"]["비정상"],
+                "no_reason": dml["no_reason"],
                 "progress": dml["progress"],
             },
             "ddl": {
@@ -227,12 +246,15 @@ def get_dashboard_data(db: Session, year_month: str) -> dict:
                 "normal": ddl["status"]["정상"],
                 "abnormal": ddl["status"]["비정상"],
                 "pending": ddl["status"]["미적용"],
+                "no_reason": ddl["no_reason"],
                 "progress": ddl["progress"],
             },
         },
         "status_dist": status_dist,
         "status_pct": status_pct,
         "status_total": sd_total,
+        "done_total": done_total,
+        "no_reason_total": no_reason_total,
         "donut_gradient": _conic_gradient(status_dist),
         "by_system": by_system,
         "by_system_max": by_system_max,

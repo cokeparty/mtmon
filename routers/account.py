@@ -5,6 +5,7 @@ POST /account/create                → 계정 생성 (계정관리 수정)
 POST /account/{id}/role · toggle-active · info · email · reset-password  (계정관리 수정)
 
 역할 목록은 역할관리(account.role)에서 읽는다.
+관리자(administrator) 역할은 여기서 줄 수 없고, 관리자 계정은 여기서 바꿀 수 없다 (DB 에서만).
 """
 import re
 
@@ -13,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from config import settings
-from core.permissions import page_edit, page_view
+from core.permissions import ADMIN_ROLE, page_edit, page_view
 from core.security import hash_password
 from core.web import render
 from db.database import get_db
@@ -24,9 +25,26 @@ router = APIRouter(prefix="/account", tags=["admin"])
 _LOGIN_ID_RE = re.compile(r'^[a-z0-9_]{4,20}$')
 
 
-def _role_labels(db: Session) -> dict[str, str]:
-    """{역할코드: 이름} — 역할관리 화면의 순서대로."""
-    return {r.code: r.name for r in db.query(Role).order_by(Role.sort_order, Role.code).all()}
+def _role_labels(db: Session, include_admin: bool = False) -> dict[str, str]:
+    """{역할코드: 이름} — 역할관리 화면의 순서대로. 관리자 역할은 표시용으로만 포함한다."""
+    q = db.query(Role).order_by(Role.sort_order, Role.code)
+    if not include_admin:
+        q = q.filter(Role.code != ADMIN_ROLE)
+    return {r.code: r.name for r in q.all()}
+
+
+def _target(request: Request, db: Session, user_id: int):
+    """수정할 계정. 없거나 관리자 계정이면 (None, 안내 응답)."""
+    user = db.query(AppUser).filter(AppUser.id == user_id).first()
+    if not user:
+        msg = "존재하지 않는 계정입니다."
+    elif user.role == ADMIN_ROLE:
+        msg = "관리자 계정은 앱에서 수정할 수 없습니다."
+    else:
+        return user, None
+    request.session["flash"] = msg
+    request.session["flash_type"] = "err"
+    return None, RedirectResponse("/account", status_code=303)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -41,7 +59,9 @@ async def user_list(
     return render(request, "account.html", {
         "active":       "account",
         "users":        users,
-        "role_labels":  _role_labels(db),
+        "role_labels":  _role_labels(db),                       # 부여 가능한 역할
+        "role_names":   _role_labels(db, include_admin=True),   # 표시용 (관리자 포함)
+        "admin_role":   ADMIN_ROLE,
         "flash":        flash,
         "flash_type":   flash_type,
     })
@@ -101,11 +121,9 @@ async def user_change_role(
         request.session["flash_type"] = "err"
         return RedirectResponse("/account", status_code=303)
 
-    user = db.query(AppUser).filter(AppUser.id == user_id).first()
-    if not user:
-        request.session["flash"] = "존재하지 않는 계정입니다."
-        request.session["flash_type"] = "err"
-        return RedirectResponse("/account", status_code=303)
+    user, fail = _target(request, db, user_id)        # 없거나 관리자 계정이면 거절
+    if fail:
+        return fail
 
     if user.id == current_user.id:
         request.session["flash"] = "자신의 역할은 변경할 수 없습니다."
@@ -126,11 +144,9 @@ async def user_toggle_active(
     current_user=Depends(page_edit("account")),
     db: Session = Depends(get_db),
 ):
-    user = db.query(AppUser).filter(AppUser.id == user_id).first()
-    if not user:
-        request.session["flash"] = "존재하지 않는 계정입니다."
-        request.session["flash_type"] = "err"
-        return RedirectResponse("/account", status_code=303)
+    user, fail = _target(request, db, user_id)        # 없거나 관리자 계정이면 거절
+    if fail:
+        return fail
 
     if user.id == current_user.id:
         request.session["flash"] = "자신의 계정은 비활성화할 수 없습니다."
@@ -158,10 +174,11 @@ async def user_update_info(
               "application/json" in request.headers.get("accept", "")
 
     user = db.query(AppUser).filter(AppUser.id == user_id).first()
-    if not user:
+    if not user or user.role == ADMIN_ROLE:
+        msg = "존재하지 않는 계정입니다." if not user else "관리자 계정은 앱에서 수정할 수 없습니다."
         if is_ajax:
-            return JSONResponse({"ok": False, "msg": "존재하지 않는 계정입니다."}, status_code=404)
-        request.session["flash"] = "존재하지 않는 계정입니다."
+            return JSONResponse({"ok": False, "msg": msg}, status_code=404 if not user else 403)
+        request.session["flash"] = msg
         request.session["flash_type"] = "err"
         return RedirectResponse("/account", status_code=303)
     if not name.strip():
@@ -188,11 +205,9 @@ async def user_update_email(
     current_user=Depends(page_edit("account")),
     db: Session = Depends(get_db),
 ):
-    user = db.query(AppUser).filter(AppUser.id == user_id).first()
-    if not user:
-        request.session["flash"] = "존재하지 않는 계정입니다."
-        request.session["flash_type"] = "err"
-        return RedirectResponse("/account", status_code=303)
+    user, fail = _target(request, db, user_id)        # 없거나 관리자 계정이면 거절
+    if fail:
+        return fail
 
     user.email = email.strip() or None
     db.commit()
@@ -208,11 +223,9 @@ async def user_reset_password(
     current_user=Depends(page_edit("account")),
     db: Session = Depends(get_db),
 ):
-    user = db.query(AppUser).filter(AppUser.id == user_id).first()
-    if not user:
-        request.session["flash"] = "존재하지 않는 계정입니다."
-        request.session["flash_type"] = "err"
-        return RedirectResponse("/account", status_code=303)
+    user, fail = _target(request, db, user_id)        # 없거나 관리자 계정이면 거절
+    if fail:
+        return fail
 
     user.password_hash = hash_password(settings.INITIAL_PASSWORD)
     db.commit()

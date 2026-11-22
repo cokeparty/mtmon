@@ -27,9 +27,9 @@
   <table class="g batch-jobs" data-grid data-grid-bar="#jobBar">
     <thead>
       <tr>
-        <th class="th" data-f>배치잡</th>
+        <th class="th" data-f style="width:300px">배치잡</th>
         <th class="th" data-f>설명</th>
-        <th class="th" data-f style="width:130px">일정</th>
+        <th class="th" data-f style="width:150px">일정</th>
         <th class="th" data-f style="width:160px">다음 실행</th>
         <th class="th" data-f style="width:100px">최근 결과</th>
         <th class="th" data-f style="width:200px">최근 실행</th>
@@ -39,9 +39,9 @@
     <tbody>
       {% for j in jobs %}
       <tr {% if j.last and j.last.status in ('failed', 'partial') %}data-status="{{ '비정상' if j.last.status == 'partial' else '미적용' }}"{% endif %}>
-        <td class="td" data-v="{{ j.name }}"><b>{{ j.name }}</b><div class="mono muted">{{ j.job_id }}</div></td>
-        <td class="td muted">{{ j.description }}</td>
-        <td class="td" data-v="{{ j.schedule_desc }}">{{ j.schedule_desc }}<div class="mono muted">{{ j.cron }}</div></td>
+        <td class="td" data-v="{{ j.name }}" title="{{ j.name }} ({{ j.job_id }})"><b>{{ j.name }}</b> <span class="mono muted">{{ j.job_id }}</span></td>
+        <td class="td muted" title="{{ j.description }}">{{ j.description }}</td>
+        <td class="td" data-v="{{ j.schedule_desc }}" title="cron: {{ j.cron }}">{{ j.schedule_desc }}</td>
         <td class="td mono">{{ j.next_run or '-' }}</td>
         <td class="td" data-v="{{ j.last.status_label if j.last else '실행 이력 없음' }}">
           {% if j.last %}
@@ -102,11 +102,10 @@
         </td>
         <td class="td">{{ h.duration }}</td>
         <td class="td" data-v="{{ h.summary or h.error_message }}">
-          {% if h.summary %}<div>{{ h.summary }}</div>{% endif %}
-          {% if h.error_message %}
-            <div class="err-msg">{% if h.error_type %}<b>{{ h.error_type }}</b> · {% endif %}{{ h.error_message | truncate(300) }}</div>
-          {% endif %}
-          {% if h.status in ('failed', 'partial') %}<a href="#" class="link-detail" data-id="{{ h.id }}">에러 상세</a>{% endif %}
+          <div class="one-line" title="{{ h.summary or '' }}{% if h.summary and h.error_message %} / {% endif %}{% if h.error_type %}{{ h.error_type }} · {% endif %}{{ h.error_message or '' }}">
+            <span class="txt">{% if h.summary %}{{ h.summary }}{% endif %}{% if h.summary and h.error_message %} · {% endif %}{% if h.error_message %}<span class="err-msg">{% if h.error_type %}<b>{{ h.error_type }}</b> · {% endif %}{{ h.error_message | truncate(300) }}</span>{% endif %}</span>
+            {% if h.status in ('failed', 'partial') %}<a href="#" class="link-detail" data-id="{{ h.id }}">에러 상세</a>{% endif %}
+          </div>
         </td>
       </tr>
       {% else %}
@@ -136,12 +135,16 @@
 {% block styles %}
 <style>
   .batch-jobs, .batch-hist { width: 100%; table-layout: fixed; }
-  .batch-jobs td, .batch-hist td { vertical-align: top; white-space: normal; word-break: break-all; }
+  /* 행은 한 줄 — 넘치는 글자는 … 로 줄이고 마우스를 올리면 전체 표시 */
+  .batch-jobs td, .batch-hist td { vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .one-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .one-line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .one-line .link-detail { flex: none; margin-left: 0; }
   .mono  { font-family: var(--mono); font-size: 12px; }
   .muted { color: var(--muted); font-size: 12px; }
   .run-box { display: flex; gap: 4px; align-items: center; }
   .run-box .run-ym { width: 120px; height: 26px; }
-  .err-msg { margin-top: 2px; color: var(--bad); white-space: pre-wrap; }
+  .err-msg { color: var(--bad); }
   .link-detail { font-size: 12px; color: var(--accent); margin-left: 4px; }
   .section > h3 .btn { font-weight: 400; }
   .detail-meta { display: grid; grid-template-columns: 90px 1fr 90px 1fr; gap: 4px 8px; font-size: 12.5px; margin-bottom: 10px; }
