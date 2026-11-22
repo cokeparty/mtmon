@@ -33,7 +33,7 @@
    sudo systemctl status mtmon
    tail -n 30 /data/mtmon/logs/app/application-$(date +%F).log
    ```
-   - 정상: `DB 구조 최신 상태 (버전 0007)` 또는 `DB 구조 변경 적용 완료 (버전 …)`
+   - 정상: `DB 구조 최신 상태 (버전 0008)` 또는 `DB 구조 변경 적용 완료 (버전 …)`
    - 화면 접속 → 로그인 → `/batch`(배치관리) 에서 스케줄러 "동작 중" 확인
 
 * `.env`, `venv/`, `wheelhouse/`, `logs/` 는 서버에만 있고 패치에 들어가지 않음 (덮어쓸 걱정 없음)
@@ -69,6 +69,7 @@
 | 0005 | 배포 이력 테이블 deploy.deploy_history (운영엔 이미 있음 → 건너뜀) |
 | 0006 | 역할·페이지 권한 테이블(account.role, role_permission), 계정 마지막 접속일, DDL 위험(is_abnormal) 칸 삭제 |
 | 0007 | 관리자(administrator) 역할 — 모든 권한, 앱에서 보이지 않음 · 부여/수정 불가 |
+| 0008 | 계정 역할 칼럼의 옛 CHECK 제약(4개 역할만 허용) 제거 — 역할 검사는 0006 의 참조 제약이 담당 |
 
 * **관리자 계정 지정 (DB 에서만 가능)** — 앱 화면에서는 줄 수도 바꿀 수도 없다
   ```
@@ -123,7 +124,7 @@
    ```
    `program_change`, `dept_transfer`, `auth` 의 Owner 가 `.env` 의 DATABASE_URL 계정과 같아야 함.
    다르면: 소유자 계정으로 `python -m alembic upgrade head` 를 한 번 직접 실행
-8. **앱 시작** `sudo systemctl start mtmon` → A-4 처럼 로그 확인 (`적용 완료 (버전 0007)`)
+8. **앱 시작** `sudo systemctl start mtmon` → A-4 처럼 로그 확인 (`적용 완료 (버전 0008)`)
 9. **화면 확인** — 대시보드 · 프로그램변경 · 부서이동자 · DML · DDL · 배치 · 계정관리
    - 옛 주소(`/program-change`, `/dept-transfer`, `/admin/users`)는 새 주소로 자동 이동
 10. **DB 이름 변경(month_mon → mtmon)은 나중에 별도로** — 바꾼 뒤 `.env` 의 DATABASE_URL 만 수정하고 재시작
