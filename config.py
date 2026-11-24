@@ -25,16 +25,26 @@ class Settings(BaseSettings):
     SR_DB_URL: str = ""
     EMERGENCY_GRACE_DAYS: int = 5        # 긴급변경 사후승인 허용 일수
 
-    # ── Oracle (부서이동자 — 퇴직자·부서이동자·HR 조회) ───
-    ORACLE_DSN: str = ""                 # host:port/service_name
-    ORACLE_USER: str = ""
-    ORACLE_PASSWORD: str = ""
-    ORACLE_CLIENT_LIB_DIR: str = ""      # Instant Client 경로 (비우면 thin 모드)
+    # ── HR(Tibero) (부서이동자 — 퇴사자·부서이동자·IHR/PMS/조달구매 권한 조회) ──
+    #    조달구매·PMS 는 Tibero 의 DB 링크로 조회하므로 접속은 이것 하나뿐
+    TIBERO_DSN: str = ""                 # host:port/DB이름  (예: 10.100.1.130:8629/DXHR)
+    TIBERO_USER: str = ""
+    TIBERO_PASSWORD: str = ""
+    TIBERO_JDBC_JAR: str = "lib/tibero7-jdbc.jar"   # 상대경로면 프로젝트 루트 기준
+    JAVA_HOME: str = ""                  # java 가 PATH 에 없을 때만 (JRE 8 이상)
 
-    # ── BPM DB (부서이동자 — HR·EPRO·PMS 권한 조회) ──────
-    BPM_ORACLE_DSN: str = ""             # host:port/dbname
-    BPM_ORACLE_USER: str = ""
-    BPM_ORACLE_PASSWORD: str = ""
+    # ── 메일 (SMTP) — 부서이동자 일간 결과 메일 ─────────────
+    SMTP_HOST: str = ""                  # 비우면 메일 배치가 '설정 없음'으로 실패 처리
+    SMTP_PORT: int = 25
+    SMTP_HELO: str = ""                  # EHLO 에 쓸 도메인 (예: kmdev.poscodx.com, 비우면 서버 이름)
+    SMTP_STARTTLS: bool = False
+    SMTP_SSL: bool = False               # 465 포트 SSL 접속일 때만 True
+    SMTP_USER: str = ""                  # 인증이 필요할 때만
+    SMTP_PASSWORD: str = ""
+    MAIL_FROM: str = ""                  # 발신자 (예: pe912821@poscodx.com)
+    DEPART_DAILY_MAIL_TO: str = ""       # 받는 사람 — 쉼표(,) 또는 세미콜론(;)으로 여러 명
+    DEPART_DAILY_MAIL_CC: str = ""
+    APP_BASE_URL: str = ""               # 메일의 '화면에서 보기' 링크 (예: http://서버:8000, 비우면 링크 없음)
 
     # ── 로그 ──────────────────────────────────────────────
     LOG_DIR: str = "logs"                # 상대경로면 프로젝트 루트 기준

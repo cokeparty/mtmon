@@ -27,8 +27,8 @@ alembic==1.14.0
 # ── 배치 스케줄러 (앱 내 실행, cron 대체) ──
 APScheduler==3.10.4
 
-# ── Oracle (부서이동자 수집) ──
-oracledb>=2.0
+# ── HR(Tibero) JDBC 호출 (부서이동자 수집, 서버에 Java 필요) ──
+JPype1>=1.6.0               # 서버 Python 3.11 → 1.6.0, 3.12 이상 → 1.7.x
 
 # ── auth ──
 passlib[bcrypt]==1.7.4

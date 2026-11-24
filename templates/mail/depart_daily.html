@@ -1,0 +1,117 @@
+{#- 부서이동자 일간 결과 메일 — 메일 프로그램 호환을 위해 스타일은 모두 inline, 표 레이아웃 -#}
+{%- set TH = "padding:6px 8px;border:1px solid #d0d7de;background:#f6f8fa;font-weight:700;text-align:left;white-space:nowrap;color:#24292f;" -%}
+{%- set TD = "padding:5px 8px;border:1px solid #d0d7de;white-space:nowrap;color:#24292f;" -%}
+{%- set MUTED = "color:#6a737d;" -%}
+{%- macro status(r) -%}
+  {%- if r.action == '유지' -%}<span style="color:#1a7f37;font-weight:700;">유지</span>
+  {%- elif r.action == '회수' -%}<span style="color:#cf222e;font-weight:700;">회수</span>
+  {%- else -%}<span style="color:#9a6700;font-weight:700;">미처리</span>{%- endif -%}
+{%- endmacro -%}
+{%- macro heading(title, n, pend=None) -%}
+  <h3 style="margin:22px 0 6px;font-size:15px;color:#24292f;">{{ title }}
+    <span style="font-size:12px;font-weight:400;color:#57606a;">{{ n }}건{% if pend %} · <span style="color:#9a6700;font-weight:700;">미처리 {{ pend }}</span>{% endif %}</span></h3>
+{%- endmacro -%}
+{%- macro empty(cols) -%}
+  <tr><td colspan="{{ cols }}" style="{{ TD }}text-align:center;color:#8c959f;padding:12px;">데이터 없음</td></tr>
+{%- endmacro -%}
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>부서이동자 일간 모니터링</title></head>
+<body style="margin:0;padding:16px;background:#ffffff;font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:13px;color:#24292f;">
+
+<h2 style="margin:0 0 4px;font-size:18px;">부서이동자 일간 모니터링 <span style="font-size:13px;font-weight:400;color:#57606a;">{{ today.strftime('%Y-%m-%d') }}</span></h2>
+<div style="font-size:12px;{{ MUTED }}">
+  조회 범위: 발령적용일·퇴직일 기준 최근 7일 ~ 어제 (소급 발령 포함) · 권한은 오늘 유효한 것
+  {%- if collect and collect.finished_at %} · 수집 {{ collect.finished_at.strftime('%H:%M') }}{% endif %}
+  {%- if link %} · <a href="{{ link }}" style="color:#0969da;">화면에서 보기</a>{% endif %}
+</div>
+
+{% if not collect %}
+<div style="margin:10px 0 0;padding:8px 10px;border:1px solid #f0b5a2;border-left:3px solid #cf222e;background:#fdecea;font-size:12px;color:#82071e;">
+  <b>오늘 일간 수집 결과가 없습니다</b> — 수집 배치가 실행되지 않았거나 모두 실패했습니다. 목록이 비어 있어도 실제로 대상이 없다는 뜻이 아닐 수 있으니 배치관리 화면에서 확인하세요.
+</div>
+{% elif collect.status == 'partial' %}
+<div style="margin:10px 0 0;padding:8px 10px;border:1px solid #f0b5a2;border-left:3px solid #cf222e;background:#fdecea;font-size:12px;color:#82071e;">
+  <b>일부 조회 실패</b> — 아래 표에서 실패한 항목은 빠져 있을 수 있습니다.<br>
+  {{ (collect.error_message or '') | e | replace('\n', '<br>') | safe }}
+</div>
+{% endif %}
+
+<!-- 요약 -->
+<table cellpadding="0" cellspacing="0" style="margin:14px 0 0;border-collapse:collapse;">
+  <tr>
+    {% for key, label in [('resign','퇴직자'),('dept','부서변경자'),('hr','HR권한'),('epro','전자조달'),('pms','PMS')] %}
+    {% set p = pending.get(key, 0) %}
+    <td style="padding:8px 18px;border:1px solid #d0d7de;text-align:center;{% if p %}background:#fff8c5;{% endif %}">
+      <div style="font-size:20px;font-weight:700;">{{ counts[key] }}</div>
+      <div style="font-size:12px;color:#57606a;white-space:nowrap;">{{ label }}{% if p %} <span style="color:#9a6700;font-weight:700;">(미처리 {{ p }})</span>{% endif %}</div>
+    </td>
+    {% endfor %}
+  </tr>
+</table>
+
+<!-- 퇴직자 -->
+{{ heading('퇴직자', counts.resign) }}
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
+  <tr><th style="{{ TH }}">퇴직일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
+      <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">구분</th></tr>
+  {% for r in groups.resign %}
+  <tr><td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.dept_code }}</td>
+      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}">{{ '협력직' if r.record_type == '퇴직자(협력)' else '임직원' }}</td></tr>
+  {% else %}{{ empty(6) }}{% endfor %}
+</table>
+
+<!-- 부서변경자 -->
+{{ heading('부서변경자', counts.dept) }}
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
+  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
+      <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th>
+      <th style="{{ TH }}">이전부서코드</th><th style="{{ TH }}">이전부서명</th></tr>
+  {% for r in groups.dept %}
+  <tr><td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.dept_code }}</td>
+      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_code }}</td>
+      <td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td></tr>
+  {% else %}{{ empty(7) }}{% endfor %}
+</table>
+
+<!-- HR권한 -->
+{{ heading('HR권한', counts.hr, pending.hr) }}
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
+  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">사번</th>
+      <th style="{{ TH }}">이름</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}">권한</th>
+      <th style="{{ TH }}">권한시작일</th><th style="{{ TH }}text-align:center;">처리</th></tr>
+  {% for r in groups.hr %}
+  <tr style="{% if not r.action %}background:#fffbea;{% elif r.action == '회수' %}background:#fff5f5;{% endif %}">
+      <td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.dept_name }}</td>
+      <td style="{{ TD }}">{{ r.empno }}</td><td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td>
+      <td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
+      <td style="{{ TD }}{{ MUTED }}">{{ r.reg_date }}</td><td style="{{ TD }}text-align:center;">{{ status(r) }}</td></tr>
+  {% else %}{{ empty(8) }}{% endfor %}
+</table>
+
+{% for key, title in [('epro', '전자조달권한'), ('pms', 'PMS권한')] %}
+<!-- {{ title }} -->
+{{ heading(title, counts[key], pending[key]) }}
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
+  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부여권한</th><th style="{{ TH }}">role_cd</th>
+      <th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th><th style="{{ TH }}">권한등록일</th>
+      <th style="{{ TH }}">부서명</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}text-align:center;">처리</th></tr>
+  {% for r in groups[key] %}
+  <tr style="{% if not r.action %}background:#fffbea;{% elif r.action == '회수' %}background:#fff5f5;{% endif %}">
+      <td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
+      <td style="{{ TD }}{{ MUTED }}">{{ r.role_code }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.reg_date }}</td>
+      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td>
+      <td style="{{ TD }}text-align:center;">{{ status(r) }}</td></tr>
+  {% else %}{{ empty(9) }}{% endfor %}
+</table>
+{% endfor %}
+
+<p style="margin:22px 0 0;font-size:11.5px;color:#8c959f;">
+  월간모니터링 통합대시보드에서 자동 발송된 메일입니다{% if app_env != 'prod' %} ({{ app_env }}){% endif %}.
+  권한의 유지·회수 처리와 SR 입력은 부서이동자(일간) 화면에서 합니다.
+</p>
+</body>
+</html>

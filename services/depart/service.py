@@ -205,6 +205,7 @@ def get_monthly_summary(db: Session, year_month: str) -> dict:
     period = get_period(db, year_month)
     kpi: dict = {
         "공통": {"total": 0},
+        "퇴사자": {"total": 0},
         "HR":   {"total": 0, "applied": 0, "pending": 0},
         "PMS":  {"total": 0, "applied": 0, "pending": 0},
         "EPRO": {"total": 0, "applied": 0, "pending": 0},
@@ -212,10 +213,10 @@ def get_monthly_summary(db: Session, year_month: str) -> dict:
     }
     if not period:
         return kpi
-    for sc in ("공통", "HR", "PMS", "EPRO"):
+    for sc in ("공통", "퇴사자", "HR", "PMS", "EPRO"):
         rows = db.query(MonthlyRecord).filter_by(period_id=period.id, system_code=sc).all()
         total = len(rows)
-        if sc == "공통":
+        if sc in ("공통", "퇴사자"):            # 리스트만 (SR 처리 대상 아님)
             kpi[sc] = {"total": total}
         else:
             # 미적용 = SR번호 미입력 OR SR이 SR DB에 없음(=sr_title 미매핑)
@@ -272,6 +273,7 @@ def update_monthly_sr(
 def export_monthly_excel(db: Session, year_month: str, system_code: str) -> bytes:
     """월간 부서이동자 엑셀.
     - 공통: 부서이동자 리스트 (부서변경일 · 사번 · 이름 · 이전부서 · 현재부서)
+    - 퇴사자: 퇴사자 리스트 (퇴직일 · 사번 · 이름 · 구분 · 부서)
     - PMS · HR · EPRO: 권한 현황 (권한 · 등록/회수일 · 부서 · SR · 비고)
     """
     period = get_period(db, year_month)
@@ -286,13 +288,17 @@ def export_monthly_excel(db: Session, year_month: str, system_code: str) -> byte
         headers = ["부서변경일", "사번", "이름", "이전부서코드", "이전부서명", "현재부서코드", "현재부서명"]
         rows = [[_d(r.change_date), r.empno, r.emp_name or "", r.prev_dept_code or "",
                  r.prev_dept_name or "", r.dept_code or "", r.dept_name or ""] for r in records]
+    elif system_code == "퇴사자":
+        headers = ["퇴직일", "사번", "이름", "구분", "부서코드", "부서명"]
+        rows = [[_d(r.change_date), r.empno, r.emp_name or "", r.role_name or "",
+                 r.dept_code or "", r.dept_name or ""] for r in records]
     else:
         headers = ["업무명", "부서변경일", "권한명", "권한코드", "사번", "이름", "권한등록일", "권한회수일",
                    "이전부서명", "현재부서명", "SR", "비고"]
         rows = [[r.system_code, _d(r.change_date), r.role_name or "", r.role_code or "", r.empno,
                  r.emp_name or "", _d(r.reg_date), _d(r.revoke_date), r.prev_dept_name or "",
                  r.dept_name or "", r.sr_no or "", r.remark or ""] for r in records]
-    sheet = system_code if system_code != "공통" else "부서이동자"
+    sheet = "부서이동자" if system_code == "공통" else system_code
     return excel.build(sheet, headers, rows, header_style="dark", auto_width=True)
 
 

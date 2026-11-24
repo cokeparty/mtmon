@@ -107,14 +107,20 @@
    - 안 지우면 없는 파일을 실행하다 매번 실패함
 3. **앱 중지** `sudo systemctl stop mtmon`
 4. **소스 교체** — `/opt/mtmon` 의 `.env`, `venv/`, `wheelhouse/` 는 남기고 나머지를 새 소스로
-5. **패키지 추가 설치** — 새로 필요한 것: `alembic`, `APScheduler`(+`tzlocal`), `oracledb`
+5. **패키지 추가 설치** — 새로 필요한 것: `alembic`, `APScheduler`(+`tzlocal`), `JPype1` (oracledb 는 더 이상 안 씀)
    → C. 순서대로 wheelhouse 갱신 후 설치
 6. **.env 작성** — `.env.example` 을 복사해 값 채우기
    ```
    cp .env.example .env && vi .env
    ```
    - 옛 운영 값은 개발 PC 에서 `git show <개편 전 커밋>:config.py` 로 확인
-     (DATABASE_URL, SR_DB_URL, ORACLE_*, BPM_ORACLE_*, ORACLE_CLIENT_LIB_DIR, SECRET_KEY)
+     (DATABASE_URL, SR_DB_URL, SECRET_KEY)
+   - 부서이동자는 HR(Tibero) 한 곳만 접속: `TIBERO_DSN=10.100.1.130:8629/DXHR`, `TIBERO_USER`, `TIBERO_PASSWORD`
+     (옛 ORACLE_* · BPM_ORACLE_* 항목은 없어짐. 조달구매·PMS 는 Tibero 의 DB 링크 @DXHRT_BPMT1 로 조회)
+   - Tibero JDBC 드라이버 `lib/tibero7-jdbc.jar` 를 함께 올리고, 서버에 Java(JRE 8 이상)가 있어야 함 (`java -version`).
+     java 가 PATH 에 없으면 `.env` 의 `JAVA_HOME` 에 경로를 적음. Oracle Instant Client 는 더 이상 필요 없음
+   - 부서이동자 일간 메일(매일 08:40, 대상이 없어도 빈 목록으로 발송): `SMTP_HOST=203.241.0.125`, `SMTP_PORT=25`,
+     `SMTP_HELO=kmdev.poscodx.com`, `MAIL_FROM=pe912821@poscodx.com`, 받는 사람 `DEPART_DAILY_MAIL_TO`(쉼표로 여러 명), `APP_BASE_URL`(메일 속 화면 링크)
    - `SECRET_KEY` 를 옛 값 그대로 쓰면 사용자들이 다시 로그인하지 않아도 됨
    - `SCHEDULER_ENABLED=true`, `LOG_DIR=/data/mtmon/logs`, `APP_ENV=prod`
    - 권한: `chmod 600 .env`
@@ -164,8 +170,8 @@ Remove-Item -Recurse -Force wheelhouse -ErrorAction SilentlyContinue
 ## 1) 문제 패키지(환경 마커 복잡) 개별 다운로드
 py -m pip download uvloop httptools websockets watchfiles greenlet -d wheelhouse --only-binary=:all: --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
 
-## 2) oracledb 단독 다운로드 (플랫폼 태그 여러 개 지정)
-py -m pip download oracledb -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
+## 2) JPype1 단독 다운로드 (플랫폼 태그 여러 개 지정) — Tibero JDBC 호출용 (oracledb 는 더 이상 안 씀)
+py -m pip download "JPype1>=1.6.0" -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
 
 ## 3) 메인 다운로드 (의존성 정상 해결)
 py -m pip download -r requirements.txt -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311
@@ -181,7 +187,7 @@ source venv/bin/activate
 deactivate
 
 [프로젝트 루트에서 패키지 설치]
-(venv) $ pip install --no-index --find-links=./wheelhouse -r requirements.txt oracledb
+(venv) $ pip install --no-index --find-links=./wheelhouse -r requirements.txt
 
 [오라클 다운로드 및 업로드]
 Instant Client 리눅스버전 zip (Oracle 사이트)

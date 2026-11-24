@@ -2,6 +2,7 @@
 {% block title %}부서이동자 월간 모니터링{% endblock %}
 
 {% block content %}
+{% set is_list = system_code in ['공통', '퇴사자'] %}
 <div class="page-head">
   <h2>부서이동자 <span class="muted-tag">월간</span></h2>
   <div class="actions">
@@ -25,6 +26,11 @@
     <div class="card-title">부서이동자</div>
     <div class="card-num">{{ kpi['공통']['total'] }}</div>
     <div class="card-sub">리스트 건수</div>
+  </div>
+  <div class="card">
+    <div class="card-title">퇴사자</div>
+    <div class="card-num">{{ kpi['퇴사자']['total'] }}</div>
+    <div class="card-sub">임직원 + 협력직</div>
   </div>
   <div class="card {% if kpi['PMS']['pending'] > 0 %}warn{% endif %}" id="kpi-card-PMS">
     <div class="card-title">PMS</div>
@@ -50,10 +56,10 @@
 
 <!-- 시스템 탭 -->
 <div class="tabs" id="sysTabs">
-  {% for s in [('공통','부서이동자 리스트'),('PMS','PMS'),('HR','HR'),('EPRO','전자조달')] %}
+  {% for s in [('공통','부서이동자 리스트'),('퇴사자','퇴사자 리스트'),('PMS','PMS'),('HR','HR'),('EPRO','전자조달')] %}
   <button class="tab {% if s[0] == system_code %}active{% endif %}"
           onclick="changeSystem('{{ s[0] }}')">{{ s[1] }}
-    <span class="tab-cnt">{{ kpi[s[0]]['total'] }}{% if s[0] != '공통' %} · <span class="tab-pend {% if kpi[s[0]]['pending'] %}on{% endif %}" id="tab-pending-{{ s[0] }}" title="SR 미처리">미처리 {{ kpi[s[0]]['pending'] }}</span>{% endif %}</span>
+    <span class="tab-cnt">{{ kpi[s[0]]['total'] }}{% if s[0] not in ['공통', '퇴사자'] %} · <span class="tab-pend {% if kpi[s[0]]['pending'] %}on{% endif %}" id="tab-pending-{{ s[0] }}" title="SR 미처리">미처리 {{ kpi[s[0]]['pending'] }}</span>{% endif %}</span>
   </button>
   {% endfor %}
 </div>
@@ -62,13 +68,14 @@
 <div class="section">
   <h3>
     {% if system_code == '공통' %}부서이동자 리스트
+    {% elif system_code == '퇴사자' %}퇴사자 리스트
     {% elif system_code == 'PMS' %}PMS 권한 현황
-    {% elif system_code == 'HR' %}HR(ERP) 권한 현황
+    {% elif system_code == 'HR' %}HR(IHR) 권한 현황
     {% else %}전자조달 권한 현황
     {% endif %}
   </h3>
 
-  {% if system_code != '공통' %}
+  {% if not is_list %}
   <div class="tab-sum">
     <span>전체 <b>{{ kpi[system_code]['total'] }}</b>건</span>
     <span class="sep"></span>
@@ -92,6 +99,14 @@
     <table id="m-table" class="g" data-grid data-grid-bar="#mBar">
       <thead>
         <tr style="background:#f6f8fa;border-bottom:2px solid #e1e4e8;">
+          {% if system_code == '퇴사자' %}
+          <th class="th" data-f>퇴직일</th>
+          <th class="th" data-f>사번</th>
+          <th class="th" data-f>이름</th>
+          <th class="th" data-f>구분</th>
+          <th class="th" data-f>부서코드</th>
+          <th class="th" data-f>부서명</th>
+          {% else %}
           <th class="th" data-f>부서변경일</th>
           <th class="th" data-f>사번</th>
           <th class="th" data-f>이름</th>
@@ -99,7 +114,8 @@
           <th class="th" data-f>이전부서명</th>
           {% if system_code == '공통' %}<th class="th" data-f>현재부서코드</th>{% endif %}
           <th class="th" data-f>현재부서명</th>
-          {% if system_code != '공통' %}
+          {% endif %}
+          {% if not is_list %}
           <th class="th" data-f>권한명</th>
           <th class="th" data-f>권한등록일</th>
           <th class="th" data-f style="width:120px;">권한회수일</th>
@@ -110,9 +126,17 @@
       </thead>
       <tbody>
         {% for r in records %}
-        <tr id="mr-{{ r.id }}" {% if system_code != '공통' and not (r.sr_no and r.sr_title) %}data-action="none"{% endif %}
+        <tr id="mr-{{ r.id }}" {% if not is_list and not (r.sr_no and r.sr_title) %}data-action="none"{% endif %}
             style="border-bottom:1px solid #eaecef;
-              {% if system_code != '공통' and not (r.sr_no and r.sr_title) %}background:#fffbea;{% endif %}">
+              {% if not is_list and not (r.sr_no and r.sr_title) %}background:#fffbea;{% endif %}">
+          {% if system_code == '퇴사자' %}
+          <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
+          <td class="td">{{ r.empno }}</td>
+          <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
+          <td class="td">{{ r.role_name }}</td>
+          <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
+          <td class="td">{{ r.dept_name }}</td>
+          {% else %}
           <td class="td" style="white-space:nowrap;color:#6a737d;">{{ r.change_date }}</td>
           <td class="td">{{ r.empno }}</td>
           <td class="td" style="font-weight:500;">{{ r.emp_name }}</td>
@@ -124,7 +148,8 @@
           <td class="td" style="color:#6a737d;font-size:12px;">{{ r.dept_code }}</td>
           {% endif %}
           <td class="td">{{ r.dept_name }}</td>
-          {% if system_code != '공통' %}
+          {% endif %}
+          {% if not is_list %}
           <td class="td" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
               title="{{ r.role_name }}">{{ r.role_name }}</td>
           <td class="td" style="font-size:12px;">{{ r.reg_date }}</td>

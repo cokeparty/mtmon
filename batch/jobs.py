@@ -73,7 +73,7 @@ def run_program_monthly(db: Session, params: dict) -> JobResult:
 
 
 def run_depart_daily(db: Session, params: dict) -> JobResult:
-    """부서이동자 일간: Oracle·BPM 6개 쿼리 → depart.daily_record UPSERT."""
+    """부서이동자 일간: HR(Tibero) 5개 쿼리 → depart.daily_record UPSERT."""
     from services.depart.collector import collect_daily
 
     result = collect_daily(db)
@@ -90,8 +90,23 @@ def run_depart_daily(db: Session, params: dict) -> JobResult:
     )
 
 
+def run_depart_daily_mail(db: Session, params: dict) -> JobResult:
+    """부서이동자 일간 결과 메일: 오늘 일간 수집 결과를 '전체' 탭 형태 HTML 로 발송."""
+    from services.depart import daily_mail
+
+    r = daily_mail.send(db)
+    c = r["counts"]
+    return JobResult(
+        status="partial" if r["no_collect"] else "success",
+        errors=["오늘 성공한 일간 수집이 없어 빈 목록으로 발송함"] if r["no_collect"] else [],
+        summary=(f"발송 {len(r['to']) + len(r['cc'])}명 — 퇴직 {c['resign']} · 부서변경 {c['dept']} · "
+                 f"HR {c['hr']} · 전자조달 {c['epro']} · PMS {c['pms']}건"),
+        data=r,
+    )
+
+
 def run_depart_monthly(db: Session, params: dict) -> JobResult:
-    """부서이동자 월간: 4개 쿼리 → depart.monthly_record 적재 + 일간 SR 자동 매핑."""
+    """부서이동자 월간: HR(Tibero) 5개 쿼리 → depart.monthly_record 적재 + 일간 SR 자동 매핑."""
     from services.depart.service import run_monthly_collect
 
     ym = params["year_month"]
@@ -138,6 +153,9 @@ JOBS: list[JobDef] = [
     JobDef("depart_daily", "부서이동자 일간 수집",
            "퇴직자·부서변경자와 시스템별 추가 권한을 조회해 일간 목록에 반영",
            "10 8 * * *", "매일 08:10", run_depart_daily),
+    JobDef("depart_daily_mail", "부서이동자 일간 메일",
+           "오늘 일간 수집 결과(퇴직자·부서변경자·HR·전자조달·PMS)를 메일로 발송 — 대상이 없어도 빈 목록으로 발송",
+           "40 8 * * *", "매일 08:40", run_depart_daily_mail),
     JobDef("depart_monthly", "부서이동자 월간 수집",
            "전월 회차의 부서이동자·권한 현황을 적재하고 일간 SR 입력값을 자동 매핑",
            "10 8 1 * *", "매월 1일 08:10", run_depart_monthly, _prev_month, _ym_label),
