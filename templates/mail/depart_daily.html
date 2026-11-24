@@ -1,117 +1,195 @@
-{#- 부서이동자 일간 결과 메일 — 메일 프로그램 호환을 위해 스타일은 모두 inline, 표 레이아웃 -#}
-{%- set TH = "padding:6px 8px;border:1px solid #d0d7de;background:#f6f8fa;font-weight:700;text-align:left;white-space:nowrap;color:#24292f;" -%}
-{%- set TD = "padding:5px 8px;border:1px solid #d0d7de;white-space:nowrap;color:#24292f;" -%}
-{%- set MUTED = "color:#6a737d;" -%}
-{%- macro status(r) -%}
-  {%- if r.action == '유지' -%}<span style="color:#1a7f37;font-weight:700;">유지</span>
-  {%- elif r.action == '회수' -%}<span style="color:#cf222e;font-weight:700;">회수</span>
-  {%- else -%}<span style="color:#9a6700;font-weight:700;">미처리</span>{%- endif -%}
+{#- 부서이동자 일간 결과 메일 — 메일 프로그램(Outlook 포함) 호환을 위해 표 레이아웃 + inline 스타일만 사용 -#}
+{%- set FONT = "font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',Arial,sans-serif;" -%}
+{%- set TH = "padding:8px 10px;background:#f3f5f8;border-bottom:1px solid #dde2e8;font-size:12px;font-weight:700;color:#4a5563;text-align:left;white-space:nowrap;" -%}
+{%- set TD = "padding:8px 10px;border-bottom:1px solid #eef1f4;font-size:12.5px;color:#1f2933;white-space:nowrap;" -%}
+{%- set SUB = "color:#7b8794;" -%}
+{%- macro pill(r) -%}
+  {%- if r.action == '유지' -%}<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:#e3f4e8;color:#17703a;font-size:11.5px;font-weight:700;">유지</span>
+  {%- elif r.action == '회수' -%}<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:#fde8e8;color:#b42318;font-size:11.5px;font-weight:700;">회수</span>
+  {%- else -%}<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:#fff1c2;color:#8a5a00;font-size:11.5px;font-weight:700;">미처리</span>{%- endif -%}
 {%- endmacro -%}
-{%- macro heading(title, n, pend=None) -%}
-  <h3 style="margin:22px 0 6px;font-size:15px;color:#24292f;">{{ title }}
-    <span style="font-size:12px;font-weight:400;color:#57606a;">{{ n }}건{% if pend %} · <span style="color:#9a6700;font-weight:700;">미처리 {{ pend }}</span>{% endif %}</span></h3>
+{%- macro section(title, n, color, pend=0) -%}
+  <tr><td style="padding:26px 28px 8px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+      <td style="border-left:4px solid {{ color }};padding:1px 0 1px 10px;{{ FONT }}font-size:15px;font-weight:700;color:#1f2933;">
+        {{ title }}
+        <span style="font-size:12.5px;font-weight:400;color:#7b8794;">&nbsp;{{ n }}건</span>
+        {%- if pend %}<span style="font-size:12.5px;font-weight:700;color:#8a5a00;">&nbsp;· 미처리 {{ pend }}</span>{% endif %}
+      </td>
+    </tr></table>
+  </td></tr>
 {%- endmacro -%}
 {%- macro empty(cols) -%}
-  <tr><td colspan="{{ cols }}" style="{{ TD }}text-align:center;color:#8c959f;padding:12px;">데이터 없음</td></tr>
+  <tr><td colspan="{{ cols }}" style="padding:16px 10px;text-align:center;font-size:12.5px;color:#9aa5b1;border-bottom:1px solid #eef1f4;">해당 건이 없습니다</td></tr>
 {%- endmacro -%}
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><title>부서이동자 일간 모니터링</title></head>
-<body style="margin:0;padding:16px;background:#ffffff;font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:13px;color:#24292f;">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>부서이동자 일간 모니터링</title></head>
+<body style="margin:0;padding:0;background:#eef1f5;{{ FONT }}">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" bgcolor="#eef1f5" style="background:#eef1f5;">
+<tr><td align="center" style="padding:24px 12px;">
 
-<h2 style="margin:0 0 4px;font-size:18px;">부서이동자 일간 모니터링 <span style="font-size:13px;font-weight:400;color:#57606a;">{{ today.strftime('%Y-%m-%d') }}</span></h2>
-<div style="font-size:12px;{{ MUTED }}">
-  조회 범위: 발령적용일·퇴직일 기준 최근 7일 ~ 어제 (소급 발령 포함) · 권한은 오늘 유효한 것
-  {%- if collect and collect.finished_at %} · 수집 {{ collect.finished_at.strftime('%H:%M') }}{% endif %}
-  {%- if link %} · <a href="{{ link }}" style="color:#0969da;">화면에서 보기</a>{% endif %}
-</div>
+<table role="presentation" cellpadding="0" cellspacing="0" width="1000" style="width:1000px;max-width:1000px;background:#ffffff;border:1px solid #dde2e8;{{ FONT }}">
 
-{% if not collect %}
-<div style="margin:10px 0 0;padding:8px 10px;border:1px solid #f0b5a2;border-left:3px solid #cf222e;background:#fdecea;font-size:12px;color:#82071e;">
-  <b>오늘 일간 수집 결과가 없습니다</b> — 수집 배치가 실행되지 않았거나 모두 실패했습니다. 목록이 비어 있어도 실제로 대상이 없다는 뜻이 아닐 수 있으니 배치관리 화면에서 확인하세요.
-</div>
-{% elif collect.status == 'partial' %}
-<div style="margin:10px 0 0;padding:8px 10px;border:1px solid #f0b5a2;border-left:3px solid #cf222e;background:#fdecea;font-size:12px;color:#82071e;">
-  <b>일부 조회 실패</b> — 아래 표에서 실패한 항목은 빠져 있을 수 있습니다.<br>
-  {{ (collect.error_message or '') | e | replace('\n', '<br>') | safe }}
-</div>
-{% endif %}
+  <!-- 머리 -->
+  <tr><td bgcolor="#1e5fbf" height="4" style="background:#1e5fbf;height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>
+  <tr><td style="padding:22px 28px 20px;border-bottom:1px solid #e4e8ee;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+      <td valign="bottom">
+        <div style="font-size:11.5px;font-weight:700;color:#1e5fbf;letter-spacing:1.5px;">DAILY REPORT{% if app_env != 'prod' %} <span style="color:#b42318;">· {{ app_env|upper }}</span>{% endif %}</div>
+        <div style="margin-top:6px;font-size:23px;font-weight:700;color:#1f2933;letter-spacing:-0.3px;">부서이동자 일간 모니터링</div>
+        <div style="margin-top:6px;font-size:12.5px;color:#7b8794;">퇴직 · 부서변경 · 권한 현황 &nbsp;|&nbsp; 월간모니터링 통합대시보드</div>
+      </td>
+      <td valign="bottom" align="right" width="190">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="border-left:1px solid #e4e8ee;padding:2px 0 2px 18px;text-align:right;">
+            <div style="font-size:12px;color:#7b8794;">{{ today.strftime('%Y') }}년 · {{ '월화수목금토일'[today.weekday()] }}요일</div>
+            <div style="font-size:28px;font-weight:700;color:#1f2933;line-height:1.2;">{{ today.month }}월 {{ today.day }}일</div>
+            <div style="font-size:12px;color:{{ '#17703a' if collect else '#b42318' }};">
+              {%- if collect and collect.finished_at %}● {{ collect.finished_at.strftime('%H:%M') }} 수집 완료{% elif collect %}● 수집 완료{% else %}● 수집 결과 없음{% endif -%}
+            </div>
+          </td>
+        </tr></table>
+      </td>
+    </tr></table>
+  </td></tr>
 
-<!-- 요약 -->
-<table cellpadding="0" cellspacing="0" style="margin:14px 0 0;border-collapse:collapse;">
-  <tr>
-    {% for key, label in [('resign','퇴직자'),('dept','부서변경자'),('hr','HR권한'),('epro','전자조달'),('pms','PMS')] %}
-    {% set p = pending.get(key, 0) %}
-    <td style="padding:8px 18px;border:1px solid #d0d7de;text-align:center;{% if p %}background:#fff8c5;{% endif %}">
-      <div style="font-size:20px;font-weight:700;">{{ counts[key] }}</div>
-      <div style="font-size:12px;color:#57606a;white-space:nowrap;">{{ label }}{% if p %} <span style="color:#9a6700;font-weight:700;">(미처리 {{ p }})</span>{% endif %}</div>
-    </td>
-    {% endfor %}
-  </tr>
+  <!-- 경고 -->
+  {% if not collect or collect.status == 'partial' %}
+  <tr><td style="padding:18px 28px 0;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+      <td bgcolor="#fdecea" style="background:#fdecea;border-left:4px solid #d92d20;padding:11px 14px;font-size:12.5px;color:#7a1a12;line-height:1.6;">
+        {% if not collect %}
+        <b>오늘 일간 수집 결과가 없습니다.</b> 수집 배치가 실행되지 않았거나 모두 실패했습니다.
+        목록이 비어 있어도 실제로 대상이 없다는 뜻이 아닐 수 있으니 배치관리 화면에서 확인하세요.
+        {% else %}
+        <b>일부 항목 조회에 실패했습니다.</b> 아래 표에서 빠진 항목이 있을 수 있습니다.<br>
+        <span style="color:#9b3a30;">{{ (collect.error_message or '') | e | replace('\n', '<br>') | safe }}</span>
+        {% endif %}
+      </td>
+    </tr></table>
+  </td></tr>
+  {% endif %}
+
+  <!-- 요약 타일 -->
+  <tr><td style="padding:20px 28px 0;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+      {% for key, label in [('resign','퇴직자'),('dept','부서변경자'),('hr','HR권한'),('epro','전자조달권한'),('pms','PMS권한')] %}
+      {% set p = pending.get(key, 0) %}
+      <td width="20%" valign="top" style="padding:0 {{ '0' if loop.last else '8px' }} 0 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+          <td bgcolor="{{ '#fff8e1' if p else '#f7f9fb' }}" style="background:{{ '#fff8e1' if p else '#f7f9fb' }};border:1px solid {{ '#f2d58a' if p else '#e4e8ee' }};padding:12px 14px;">
+            <div style="font-size:12px;color:#616e7c;">{{ label }}</div>
+            <div style="margin-top:2px;font-size:24px;font-weight:700;color:#1f2933;">{{ counts[key] }}<span style="font-size:13px;font-weight:400;color:#7b8794;"> 건</span></div>
+            <div style="margin-top:2px;font-size:11.5px;{% if p %}color:#8a5a00;font-weight:700;{% else %}color:#9aa5b1;{% endif %}">
+              {%- if key in ('hr','epro','pms') -%}{{ '미처리 ' ~ p ~ '건' if p else '모두 처리됨' if counts[key] else '-' }}{%- else -%}참고용{%- endif -%}
+            </div>
+          </td>
+        </tr></table>
+      </td>
+      {% endfor %}
+    </tr></table>
+  </td></tr>
+
+  <!-- 할 일 + 버튼 -->
+  <tr><td style="padding:16px 28px 0;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+      <td style="font-size:13px;color:#3e4c59;line-height:1.6;">
+        {% if total_pend %}
+        권한 <b style="color:#8a5a00;">{{ total_pend }}건</b>이 아직 처리되지 않았습니다. 화면에서 유지·회수와 SR번호를 입력해 주세요.
+        {% else %}
+        처리할 권한 건이 없습니다.
+        {% endif %}
+      </td>
+      {% if link %}
+      <td align="right" width="170" style="padding-left:12px;">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td bgcolor="#1e5fbf" style="background:#1e5fbf;padding:9px 18px;">
+            <a href="{{ link }}" style="font-size:13px;font-weight:700;color:#ffffff;text-decoration:none;white-space:nowrap;">일간 화면 열기 &rarr;</a>
+          </td>
+        </tr></table>
+      </td>
+      {% endif %}
+    </tr></table>
+  </td></tr>
+
+  <!-- 퇴직자 -->
+  {{ section('퇴직자', counts.resign, '#8795a8') }}
+  <tr><td style="padding:0 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #dde2e8;">
+      <tr><th style="{{ TH }}">퇴직일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
+          <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">구분</th></tr>
+      {% for r in groups.resign %}
+      <tr><td style="{{ TD }}{{ SUB }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+          <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ SUB }}">{{ r.dept_code or '' }}</td>
+          <td style="{{ TD }}">{{ r.dept_name or '' }}</td>
+          <td style="{{ TD }}">{{ '협력직' if r.record_type == '퇴직자(협력)' else '임직원' }}</td></tr>
+      {% else %}{{ empty(6) }}{% endfor %}
+    </table>
+  </td></tr>
+
+  <!-- 부서변경자 -->
+  {{ section('부서변경자', counts.dept, '#8795a8') }}
+  <tr><td style="padding:0 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #dde2e8;">
+      <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
+          <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th>
+          <th style="{{ TH }}">이전부서코드</th><th style="{{ TH }}">이전부서명</th></tr>
+      {% for r in groups.dept %}
+      <tr><td style="{{ TD }}{{ SUB }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+          <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ SUB }}">{{ r.dept_code or '' }}</td>
+          <td style="{{ TD }}">{{ r.dept_name or '' }}</td><td style="{{ TD }}{{ SUB }}">{{ r.prev_dept_code or '' }}</td>
+          <td style="{{ TD }}{{ SUB }}">{{ r.prev_dept_name or '' }}</td></tr>
+      {% else %}{{ empty(7) }}{% endfor %}
+    </table>
+  </td></tr>
+
+  <!-- HR권한 -->
+  {{ section('HR권한', counts.hr, '#1e5fbf', pending.hr) }}
+  <tr><td style="padding:0 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #dde2e8;">
+      <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">사번</th>
+          <th style="{{ TH }}">이름</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}">권한</th>
+          <th style="{{ TH }}">권한시작일</th><th style="{{ TH }}text-align:center;">처리</th></tr>
+      {% for r in groups.hr %}
+      <tr><td style="{{ TD }}{{ SUB }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.dept_name or '' }}</td>
+          <td style="{{ TD }}">{{ r.empno }}</td><td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td>
+          <td style="{{ TD }}{{ SUB }}">{{ r.prev_dept_name or '' }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
+          <td style="{{ TD }}{{ SUB }}">{{ r.reg_date or '' }}</td><td style="{{ TD }}text-align:center;">{{ pill(r) }}</td></tr>
+      {% else %}{{ empty(8) }}{% endfor %}
+    </table>
+  </td></tr>
+
+  <!-- 전자조달권한 · PMS권한 -->
+  {% for key, title, color in [('epro', '전자조달권한', '#0f7b8a'), ('pms', 'PMS권한', '#6b4fbb')] %}
+  {{ section(title, counts[key], color, pending[key]) }}
+  <tr><td style="padding:0 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #dde2e8;">
+      <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부여권한</th><th style="{{ TH }}">role_cd</th>
+          <th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th><th style="{{ TH }}">권한등록일</th>
+          <th style="{{ TH }}">부서명</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}text-align:center;">처리</th></tr>
+      {% for r in groups[key] %}
+      <tr><td style="{{ TD }}{{ SUB }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
+          <td style="{{ TD }}{{ SUB }}">{{ r.role_code }}</td><td style="{{ TD }}">{{ r.empno }}</td>
+          <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ SUB }}">{{ r.reg_date or '' }}</td>
+          <td style="{{ TD }}">{{ r.dept_name or '' }}</td><td style="{{ TD }}{{ SUB }}">{{ r.prev_dept_name or '' }}</td>
+          <td style="{{ TD }}text-align:center;">{{ pill(r) }}</td></tr>
+      {% else %}{{ empty(9) }}{% endfor %}
+    </table>
+  </td></tr>
+  {% endfor %}
+
+  <!-- 꼬리 -->
+  <tr><td style="padding:28px 28px 22px;">
+    <div style="border-top:1px solid #e4e8ee;padding-top:14px;font-size:11.5px;color:#9aa5b1;line-height:1.7;">
+      조회 범위: 발령적용일·퇴직일 기준 최근 7일 ~ 어제 (소급 발령 포함) · 권한은 오늘 기준 유효한 것<br>
+      이 메일은 월간모니터링 통합대시보드에서 매일 자동 발송됩니다. 유지·회수 처리와 SR 입력은 부서이동자(일간) 화면에서 해 주세요.
+    </div>
+  </td></tr>
+
 </table>
 
-<!-- 퇴직자 -->
-{{ heading('퇴직자', counts.resign) }}
-<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
-  <tr><th style="{{ TH }}">퇴직일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
-      <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">구분</th></tr>
-  {% for r in groups.resign %}
-  <tr><td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
-      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.dept_code }}</td>
-      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}">{{ '협력직' if r.record_type == '퇴직자(협력)' else '임직원' }}</td></tr>
-  {% else %}{{ empty(6) }}{% endfor %}
+</td></tr>
 </table>
-
-<!-- 부서변경자 -->
-{{ heading('부서변경자', counts.dept) }}
-<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
-  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th>
-      <th style="{{ TH }}">부서코드</th><th style="{{ TH }}">부서명</th>
-      <th style="{{ TH }}">이전부서코드</th><th style="{{ TH }}">이전부서명</th></tr>
-  {% for r in groups.dept %}
-  <tr><td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.empno }}</td>
-      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.dept_code }}</td>
-      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_code }}</td>
-      <td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td></tr>
-  {% else %}{{ empty(7) }}{% endfor %}
-</table>
-
-<!-- HR권한 -->
-{{ heading('HR권한', counts.hr, pending.hr) }}
-<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
-  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부서명</th><th style="{{ TH }}">사번</th>
-      <th style="{{ TH }}">이름</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}">권한</th>
-      <th style="{{ TH }}">권한시작일</th><th style="{{ TH }}text-align:center;">처리</th></tr>
-  {% for r in groups.hr %}
-  <tr style="{% if not r.action %}background:#fffbea;{% elif r.action == '회수' %}background:#fff5f5;{% endif %}">
-      <td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.dept_name }}</td>
-      <td style="{{ TD }}">{{ r.empno }}</td><td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td>
-      <td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
-      <td style="{{ TD }}{{ MUTED }}">{{ r.reg_date }}</td><td style="{{ TD }}text-align:center;">{{ status(r) }}</td></tr>
-  {% else %}{{ empty(8) }}{% endfor %}
-</table>
-
-{% for key, title in [('epro', '전자조달권한'), ('pms', 'PMS권한')] %}
-<!-- {{ title }} -->
-{{ heading(title, counts[key], pending[key]) }}
-<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;">
-  <tr><th style="{{ TH }}">부서변경일</th><th style="{{ TH }}">부여권한</th><th style="{{ TH }}">role_cd</th>
-      <th style="{{ TH }}">사번</th><th style="{{ TH }}">이름</th><th style="{{ TH }}">권한등록일</th>
-      <th style="{{ TH }}">부서명</th><th style="{{ TH }}">이전부서명</th><th style="{{ TH }}text-align:center;">처리</th></tr>
-  {% for r in groups[key] %}
-  <tr style="{% if not r.action %}background:#fffbea;{% elif r.action == '회수' %}background:#fff5f5;{% endif %}">
-      <td style="{{ TD }}{{ MUTED }}">{{ r.change_date }}</td><td style="{{ TD }}">{{ r.role_name }}</td>
-      <td style="{{ TD }}{{ MUTED }}">{{ r.role_code }}</td><td style="{{ TD }}">{{ r.empno }}</td>
-      <td style="{{ TD }}font-weight:700;">{{ r.emp_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.reg_date }}</td>
-      <td style="{{ TD }}">{{ r.dept_name }}</td><td style="{{ TD }}{{ MUTED }}">{{ r.prev_dept_name }}</td>
-      <td style="{{ TD }}text-align:center;">{{ status(r) }}</td></tr>
-  {% else %}{{ empty(9) }}{% endfor %}
-</table>
-{% endfor %}
-
-<p style="margin:22px 0 0;font-size:11.5px;color:#8c959f;">
-  월간모니터링 통합대시보드에서 자동 발송된 메일입니다{% if app_env != 'prod' %} ({{ app_env }}){% endif %}.
-  권한의 유지·회수 처리와 SR 입력은 부서이동자(일간) 화면에서 합니다.
-</p>
 </body>
 </html>

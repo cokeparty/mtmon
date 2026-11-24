@@ -28,7 +28,7 @@ alembic==1.14.0
 APScheduler==3.10.4
 
 # ── HR(Tibero) JDBC 호출 (부서이동자 수집, 서버에 Java 필요) ──
-JPype1>=1.6.0               # 서버 Python 3.11 → 1.6.0, 3.12 이상 → 1.7.x
+JPype1==1.5.2               # 운영 서버 Java 8 → 1.5.2 고정 (1.6.0 부터 Java 11 이상 필요)
 
 # ── auth ──
 passlib[bcrypt]==1.7.4

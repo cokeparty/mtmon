@@ -107,7 +107,7 @@
    - 안 지우면 없는 파일을 실행하다 매번 실패함
 3. **앱 중지** `sudo systemctl stop mtmon`
 4. **소스 교체** — `/opt/mtmon` 의 `.env`, `venv/`, `wheelhouse/` 는 남기고 나머지를 새 소스로
-5. **패키지 추가 설치** — 새로 필요한 것: `alembic`, `APScheduler`(+`tzlocal`), `JPype1` (oracledb 는 더 이상 안 씀)
+5. **패키지 추가 설치** — 새로 필요한 것: `alembic`, `APScheduler`(+`tzlocal`), `JPype1==1.5.2` (서버 Java 8 용, oracledb 는 더 이상 안 씀)
    → C. 순서대로 wheelhouse 갱신 후 설치
 6. **.env 작성** — `.env.example` 을 복사해 값 채우기
    ```
@@ -171,7 +171,7 @@ Remove-Item -Recurse -Force wheelhouse -ErrorAction SilentlyContinue
 py -m pip download uvloop httptools websockets watchfiles greenlet -d wheelhouse --only-binary=:all: --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
 
 ## 2) JPype1 단독 다운로드 (플랫폼 태그 여러 개 지정) — Tibero JDBC 호출용 (oracledb 는 더 이상 안 씀)
-py -m pip download "JPype1>=1.6.0" -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
+py -m pip download "JPype1==1.5.2" -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311 --no-deps
 
 ## 3) 메인 다운로드 (의존성 정상 해결)
 py -m pip download -r requirements.txt -d wheelhouse --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.11 --implementation cp --abi cp311
